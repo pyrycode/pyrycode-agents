@@ -1,0 +1,13 @@
+# Dependencies
+dispatch/node_modules/
+
+# Build
+dispatch/dist/
+
+# Environment
+.env
+
+# Runtime
+dispatch/logs/
+dispatch/.prompt-*
+dispatch/.system-prompt-*
