@@ -26,6 +26,16 @@ This means the spec you write and the size judgment you make (see Size Check bel
 
 Write architecture specs to `docs/specs/architecture/{ticket}-{name}.md`.
 
+**You MUST commit your spec.** The dispatcher cleans up your worktree with `git worktree remove --force` after your run. Anything not committed is silently destroyed (this happened on #27, lost the spec). Do this as the last step before signalling completion:
+
+```bash
+cd <your worktree>
+git add docs/specs/architecture/<ticket>-<name>.md
+git commit -m "spec: <one-line title> (#<ticket>)"
+```
+
+The dispatcher pushes your branch automatically after your run completes — you don't need to push.
+
 Each spec should include:
 - **Context** — what problem this solves, why now
 - **Design** — package structure, key types/interfaces, data flow diagrams

@@ -550,6 +550,29 @@ async function dispatchToAgent(
     console.log(`   [${endTs}] ✅ ${agent.name} completed (${elapsedMin}min)`);
     console.log(`   Output (last 1000 chars):\n${output.slice(-1000)}`);
 
+    // Safety net: commit any uncommitted changes BEFORE worktree cleanup
+    // destroys them. Surfaced on #27 (architect's spec was Written but not
+    // committed; `git worktree remove --force` destroyed it silently). Each
+    // agent's CLAUDE.md should already commit its work, but this catches the
+    // case where an agent forgets — which has happened, and the failure mode
+    // is silent loss of the run's output. Run unconditionally inside the
+    // worktree so we don't have to know which agents write files.
+    if (item.issueNumber > 0 && useWorktree) {
+      try {
+        const dirty = execSync(`git status --porcelain`, { cwd: agentCwd, stdio: "pipe" }).toString().trim();
+        if (dirty.length > 0) {
+          execSync(`git add -A`, { cwd: agentCwd, stdio: "pipe" });
+          execSync(
+            `git commit -m "${agent.name}: auto-commit uncommitted changes for #${item.issueNumber}"`,
+            { cwd: agentCwd, stdio: "pipe" },
+          );
+          console.log(`   💾 Auto-committed uncommitted changes (agent forgot to commit)`);
+        }
+      } catch (e) {
+        console.warn(`   ⚠️  Failed safety-net commit: ${e}`);
+      }
+    }
+
     // Push the feature branch from the worktree
     if (item.issueNumber > 0) {
       try {

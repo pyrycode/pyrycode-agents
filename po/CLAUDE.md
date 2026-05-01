@@ -48,15 +48,19 @@ If the ticket already has some of these sections, preserve their content unless 
 
 ## Sizing Guide
 
+**You default to S.** Always. The only sizes you may apply are XS or S. M is the architect's call alone, never yours.
+
 - **XS** — <30 lines of production code; trivial change (rename, single-literal edit, formatting)
-- **S** — <100 lines of production code; straightforward implementation following an established pattern. **This is the default.**
-- **M** — <150 lines of production code; requires some design thought. **Apply M only when the architect's spec explicitly justifies why further splitting would create artificial seams.** Don't size at M without that signal — bias toward S and let the architect flag genuine M cases via the split mechanism.
+- **S** — <100 lines of production code; straightforward implementation following an established pattern. **This is your default for any non-trivial ticket.**
+- **M** — <150 lines of production code; requires some design thought. **You do NOT apply this label.** The architect applies it (with a written "Why M, not split" justification) on the second pass after splitting fails. If you're tempted to size M, size S and put the size-up rationale in Technical Notes for the architect to weigh.
 
 The line count covers production code. Tests scale roughly linearly with it (TDD doubles the diff; size by what the developer writes, not what review sees).
 
 **File count is not a sizing axis.** A 50-line change across 4 files might be a trivial rename; a 100-line change in one file might be a hairy concurrency primitive. The line count + the sentence test below are the real signals.
 
-**Risk-axis bump.** If the change touches a hot path, a public API, or requires a migration, size up by one bucket — line count undercounts coordination cost in those cases.
+**Risk factors go in Technical Notes, not into the size.** If the change touches a hot path, a public API, or requires a migration, surface that in Technical Notes for the architect: *"Risk: hot path (supervisor lifecycle) — architect to weigh size implications."* The architect does the sizing-up if warranted; you do not.
+
+The reason: PO and architect sizing the same way is correct only when both have the same information. PO sizes from the issue body alone — no spec, no implementation lay-of-the-land. Architect sizes from the design they just produced. Putting size-up authority on the architect is putting it where the information is.
 
 ## Sizing Test
 
