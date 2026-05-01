@@ -21,6 +21,17 @@ async function fetchWithRetry(
   throw new Error("fetchWithRetry: unreachable");
 }
 
+/**
+ * GitHub Projects v2 client used by the dispatcher.
+ *
+ * **Known limit:** every items() query in this client uses `first: 100`,
+ * which is a hard cap. If a single column ever exceeds 100 items
+ * (or `getClosedItemsNotInDone` returns a project with 100+ closed
+ * items), tickets beyond the page boundary go invisible to the
+ * dispatcher. Pagination via `pageInfo.hasNextPage` + `endCursor` is
+ * the standard fix when this becomes a real constraint. Today's
+ * pyrycode project is well under the cap.
+ */
 export class GitHubProjectClient {
   private gql: typeof graphql;
   private config: ProjectConfig;
@@ -129,6 +140,9 @@ export class GitHubProjectClient {
       if (!node.content) continue;
       if (node.content.state !== "CLOSED") continue;
       if (itemStatus === "Done") continue;
+      // Issue fragment didn't apply (PR, DraftIssue) — skip rather than
+      // push a malformed item with undefined number/labels.
+      if (typeof node.content.number !== "number") continue;
 
       items.push({
         id: node.id,
@@ -136,7 +150,7 @@ export class GitHubProjectClient {
         issueNumber: node.content.number,
         title: node.content.title,
         body: node.content.body ?? "",
-        status: itemStatus ?? "(no status)",
+        status: itemStatus ?? "no-status",
         labels: node.content.labels.nodes.map((l: any) => l.name),
         url: node.content.url,
       });
@@ -186,6 +200,10 @@ export class GitHubProjectClient {
       if (itemStatus !== status) continue;
       if (!node.content) continue;
       if (node.content.state === "CLOSED") continue;
+      // Issue fragment didn't apply (PR, DraftIssue) — skip rather than
+      // push a malformed item with undefined number/labels. The CLOSED
+      // check above doesn't catch this (state is undefined, not "CLOSED").
+      if (typeof node.content.number !== "number") continue;
 
       items.push({
         id: node.id,

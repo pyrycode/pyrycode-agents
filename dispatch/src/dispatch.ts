@@ -437,8 +437,11 @@ async function dispatchToAgent(
   // Build prompt AFTER worktree creation so specs are read from the feature branch
   const prompt = await buildPromptForAgent(agent, item, agentCwd);
 
-  // Re-index QMD in the worktree so the agent has the latest docs
-  if (agent.name !== "po") {
+  // Re-index QMD in the worktree so the agent has the latest docs.
+  // Gated on useWorktree because there's no isolated tree to re-index in
+  // the no-worktree path; running QMD in repoRoot would mutate main's
+  // index across other dispatcher cycles.
+  if (useWorktree) {
     try {
       execSync(`qmd update 2>&1 && qmd embed 2>&1`, { cwd: agentCwd, encoding: "utf-8", timeout: 120_000 });
       console.log(`   📚 QMD index updated`);
