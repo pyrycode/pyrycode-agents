@@ -78,6 +78,73 @@ export class GitHubProjectClient {
     console.log(`Status options: ${[...this.statusOptions.keys()].join(", ")}`);
   }
 
+  /**
+   * Return project items whose issue is CLOSED and whose status is NOT
+   * "Done". Used by the closed-sweep step to keep the board tidy: tickets
+   * closed by PO during a split (parent → children), tickets the user closed
+   * manually (won't-fix, duplicates), or anything else closed-but-stranded
+   * gets moved to Done.
+   *
+   * Distinct from `getItemsByStatus`, which deliberately excludes CLOSED
+   * issues so the per-column dispatch loops never operate on them.
+   */
+  async getClosedItemsNotInDone(): Promise<ProjectItem[]> {
+    if (!this.projectId) throw new Error("Not initialized");
+
+    const result: any = await this.gql(`
+      query($projectId: ID!) {
+        node(id: $projectId) {
+          ... on ProjectV2 {
+            items(first: 100) {
+              nodes {
+                id
+                fieldValueByName(name: "Status") {
+                  ... on ProjectV2ItemFieldSingleSelectValue {
+                    name
+                  }
+                }
+                content {
+                  ... on Issue {
+                    id
+                    number
+                    title
+                    body
+                    url
+                    state
+                    labels(first: 10) {
+                      nodes { name }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    `, { projectId: this.projectId });
+
+    const items: ProjectItem[] = [];
+    for (const node of result.node.items.nodes) {
+      const itemStatus = node.fieldValueByName?.name;
+      if (!node.content) continue;
+      if (node.content.state !== "CLOSED") continue;
+      if (itemStatus === "Done") continue;
+
+      items.push({
+        id: node.id,
+        issueId: node.content.id,
+        issueNumber: node.content.number,
+        title: node.content.title,
+        body: node.content.body ?? "",
+        status: itemStatus ?? "(no status)",
+        labels: node.content.labels.nodes.map((l: any) => l.name),
+        url: node.content.url,
+      });
+    }
+
+    return items;
+  }
+
   async getItemsByStatus(status: string): Promise<ProjectItem[]> {
     if (!this.projectId) throw new Error("Not initialized");
 

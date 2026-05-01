@@ -682,6 +682,29 @@ async function dispatchToAgent(
   }
 }
 
+// Closed-sweep: any closed issue that isn't already in Done gets moved
+// there. Catches PO splitting + closing the parent (the parent stays in
+// Backlog status until something moves it), tickets the user closes
+// manually (won't-fix, duplicates), and anything else closed-but-stranded.
+// Runs BEFORE auto-advance and rework routing so we never waste an advance
+// or a route on a closed ticket.
+
+async function runClosedSweep(client: GitHubProjectClient): Promise<void> {
+  try {
+    const closed = await client.getClosedItemsNotInDone();
+    for (const item of closed) {
+      try {
+        await client.updateItemStatus(item.id, "Done");
+        console.log(`   ✓ Closed-sweep: moved #${item.issueNumber} (${item.status} → Done)`);
+      } catch (e) {
+        console.warn(`   ⚠️  Failed to move closed #${item.issueNumber} to Done: ${e}`);
+      }
+    }
+  } catch (error: any) {
+    console.error(`Error running closed-sweep: ${error.message}`);
+  }
+}
+
 // Auto-advance moves tickets forward when an agent passes; rework labels
 // route backward (see runReworkRouting). The rule data + helpers live in
 // lib.ts so they can be unit-tested without spinning up the dispatcher.
@@ -844,9 +867,12 @@ async function pollLoop(): Promise<void> {
             await client.removeLabel(item.issueNumber, wipLabel);
           } catch {}
 
-          // Route rework labels before advancing, so backward movement happens first
+          // Sweep closed-but-not-Done first (parent of a split, user-closed
+          // tickets), then route rework labels (backward), then auto-advance
+          // (forward). Order matters: closed → done before route/advance so
+          // we never waste an op on a closed ticket.
+          await runClosedSweep(client);
           await runReworkRouting(client);
-          // Auto-advance so the ticket moves to the next column immediately
           await runAutoAdvance(client);
 
           // Break both loops — restart from the most-advanced column
@@ -858,8 +884,10 @@ async function pollLoop(): Promise<void> {
       }
     }
 
-    // Maintenance: route rework labels and auto-advance even when nothing was dispatched
-    // (catches tickets advanced by humans or label changes between cycles)
+    // Maintenance: closed-sweep, route rework labels, auto-advance. Runs
+    // even when nothing was dispatched (catches tickets advanced/closed by
+    // humans or label changes between cycles).
+    await runClosedSweep(client);
     await runReworkRouting(client);
     await runAutoAdvance(client);
 

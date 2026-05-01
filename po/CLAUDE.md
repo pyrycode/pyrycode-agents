@@ -79,7 +79,7 @@ If a ticket combines multiple concerns or the architect proposes a split via `ne
 1. Use `gh issue create` to create one issue per concern (smaller, sized correctly).
 2. Use `gh project item-add 1 --owner pyrycode --url <new-issue-url>` to add each new issue to the project. Then set status to **Backlog** so they're ready for refinement (not Inbox — they've been triaged, the original was already in Backlog).
 3. Sub-issue link them to the original via the GraphQL `addSubIssue` mutation, or by referencing the parent issue number in the body ("Split from #N").
-4. Close the original issue with a comment summarizing the split.
+4. Move the parent's project status to **Done**, then close the original issue with a comment summarizing the split. (The dispatcher's closed-sweep will catch you if you forget the status move, but doing it explicitly keeps the board clean immediately.)
 
 **Each child must be self-contained.** Write each child's body as if the parent never existed — full scope, full AC, links to upstream design docs (`docs/multi-session.md`, etc.). Do NOT reference parent spec sections by name; the parent spec is throwaway context once the split happens. Each child gets its own architect run that designs from the body alone.
 
