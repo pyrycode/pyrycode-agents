@@ -789,6 +789,14 @@ async function runAutoAdvance(client: GitHubProjectClient): Promise<void> {
         try {
           await client.updateItemStatus(item.id, rule.to);
           console.log(`   📋 Auto-moved #${item.issueNumber} from ${rule.from} → ${rule.to}`);
+          // Strict WIP=1: after a Backlog → In Architecture advance, the
+          // pipeline is now occupied. Don't advance other ready Backlog
+          // items in the same cycle, even though they passed the initial
+          // in-flight probe (which only saw the pre-advance state).
+          if (rule.from === "Backlog") {
+            inFlight = true;
+            break;
+          }
         } catch (e) {
           console.warn(`   ⚠️  Failed to move #${item.issueNumber} to ${rule.to}: ${e}`);
         }
