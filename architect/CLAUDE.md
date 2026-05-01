@@ -33,7 +33,28 @@ Each spec should include:
 - **Define interfaces, not implementations.** Specify the contract (`Start(ctx) error`), not the body.
 - **Stay within Go idioms.** No patterns imported from other languages without justification.
 - **Respect existing patterns.** New code should feel like it belongs in the codebase. Read the existing code first.
-- **Size check.** If a feature requires >150 lines of production code or >3 new files, consider splitting into smaller tickets.
+
+## Size Check
+
+After producing the spec, judge the implementation size from the design — line count of the production code the developer will write (tests scale linearly; size by what gets written, not what review sees).
+
+**Default target is S (≤100 lines of production code).** Smaller is always fine.
+
+If your design implies >S of production code:
+
+1. **Default action: split.** Add `needs-rework:po` to the ticket with a comment of the form:
+   > **Oversized — split as follows:**
+   > - **A:** [first slice, what it covers, points at section X of the spec]
+   > - **B:** [second slice, what it covers, points at section Y of the spec]
+   > - **C:** ...
+   >
+   > Each child should be ≤S. The spec at `docs/specs/architecture/{ticket}-{name}.md` covers all slices; child tickets re-enter In Architecture for a cheap second pass to confirm slice boundaries.
+2. **Exception: M is allowed when further splitting would create artificial seams.** If the work genuinely doesn't divide — a single concurrency primitive, a single coupled refactor, etc. — you may size at M, but the spec MUST include a one-paragraph **"Why M, not split"** justification naming the seam you considered and why splitting there would produce incoherent slices. The PO will only accept M with this justification present.
+3. **Never size at >M.** Anything that looks like XL is by definition split.
+
+The PO defaults to S and will not size at M without your justification. So if you don't flag it, downstream sees S and the developer gets a too-big ticket.
+
+**Why this matters.** The developer agent runs with a turn budget (~50 turns). M-sized tickets that cross packages have hit that budget historically (KitchenClaw #72/#73). Architect-driven splitting is informed (you've just designed it; you know the seams) where PO-driven splitting is a guess. Putting size judgment after design is structurally cheaper than putting it before.
 
 ## Go Architecture Patterns
 

@@ -48,17 +48,25 @@ If the ticket already has some of these sections, preserve their content unless 
 
 ## Sizing Guide
 
-- **XS** — <30 lines production code, single file, pure logic change
-- **S** — <100 lines, 1-2 files, straightforward implementation
-- **M** — <150 lines, 2-3 files, requires some design thought
+- **XS** — <30 lines of production code; trivial change (rename, single-literal edit, formatting)
+- **S** — <100 lines of production code; straightforward implementation following an established pattern. **This is the default.**
+- **M** — <150 lines of production code; requires some design thought. **Apply M only when the architect's spec explicitly justifies why further splitting would create artificial seams.** Don't size at M without that signal — bias toward S and let the architect flag genuine M cases via the split mechanism.
 
-**If it's bigger than M, split it.** One ticket per concern. The architect will flag oversized tickets back to you, but catching it during refinement is cheaper.
+The line count covers production code. Tests scale roughly linearly with it (TDD doubles the diff; size by what the developer writes, not what review sees).
+
+**File count is not a sizing axis.** A 50-line change across 4 files might be a trivial rename; a 100-line change in one file might be a hairy concurrency primitive. The line count + the sentence test below are the real signals.
+
+**Risk-axis bump.** If the change touches a hot path, a public API, or requires a migration, size up by one bucket — line count undercounts coordination cost in those cases.
 
 ## Sizing Test
 
 > "Can you describe this ticket in one sentence without using 'and'?"
 
 If not, it's probably two tickets.
+
+This test does the work that file-count was trying to imitate: cross-package work that needs real coordination usually needs an "and" in its description ("introduce the pool **and** wire the control plane **and** update main.go"). Catches the same signal without false-positiving on legitimate test+source pairings.
+
+**If it's bigger than M, split it.** One ticket per concern. The architect will flag oversized tickets back to you with a proposed split (see the architect agent's Size Check section), but catching it during refinement is cheaper.
 
 ## Splitting
 
