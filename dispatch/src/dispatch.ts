@@ -6,11 +6,19 @@ import { config } from "dotenv";
 
 import { GitHubProjectClient } from "./github.js";
 import { AGENTS, type AgentConfig, type ProjectItem } from "./types.js";
+import {
+  AUTO_ADVANCE_RULES,
+  AGENT_COLUMN_MAP,
+  resolveAgentsRepoRoot,
+  shouldSkipDispatch,
+  isPipelineLabel,
+  extractReworkTarget,
+} from "./lib.js";
 
 // Load .env from agents repo root (where dispatch lives).
 // __dirname is agents/dispatch/src, so ../.. is agents/ root.
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const agentsRepoRoot = resolve(__dirname, "../..");
+const agentsRepoRoot = resolveAgentsRepoRoot(__dirname);
 
 // The main pyrycode/pyrycode repo — where code lives and agents work
 const repoRoot = process.env.PYRYCODE_REPO_PATH
@@ -649,15 +657,9 @@ async function dispatchToAgent(
   }
 }
 
-// Auto-advance: move tickets forward when an agent passes.
-// All stages auto-advance on ready:{agent}. Rework labels route backward (see runReworkRouting).
-const AUTO_ADVANCE_RULES: Array<{ from: string; readyLabel: string; to: string }> = [
-  { from: "Backlog",            readyLabel: "ready:po",             to: "In Architecture" },     // PO created/split tickets
-  { from: "In Architecture",    readyLabel: "ready:architect",      to: "In Development" },      // architect → developer
-  { from: "In Development",     readyLabel: "ready:developer",      to: "In Code Review" },      // developer → code review
-  { from: "In Code Review",     readyLabel: "ready:code-review",    to: "In Documentation" },    // code review pass → documentation
-  { from: "In Documentation",   readyLabel: "ready:documentation",  to: "Done" },                // documentation → done (auto-merge)
-];
+// Auto-advance moves tickets forward when an agent passes; rework labels
+// route backward (see runReworkRouting). The rule data + helpers live in
+// lib.ts so they can be unit-tested without spinning up the dispatcher.
 
 async function runAutoAdvance(client: GitHubProjectClient): Promise<void> {
   for (const rule of AUTO_ADVANCE_RULES) {
@@ -682,8 +684,8 @@ async function runAutoAdvance(client: GitHubProjectClient): Promise<void> {
 }
 
 // Backward routing: when an agent adds needs-rework:{target}, move the ticket
-// to the target agent's column and strip the label so the target can pick it up.
-const AGENT_COLUMN_MAP = new Map(AGENTS.map(a => [a.name, a.column]));
+// to the target agent's column and strip the label so the target can pick it
+// up. AGENT_COLUMN_MAP and extractReworkTarget live in lib.ts.
 
 async function runReworkRouting(client: GitHubProjectClient): Promise<void> {
   for (const agent of AGENTS) {
@@ -693,8 +695,8 @@ async function runReworkRouting(client: GitHubProjectClient): Promise<void> {
         if (item.issueNumber <= 0) continue;
 
         for (const label of item.labels) {
-          if (!label.startsWith("needs-rework:")) continue;
-          const target = label.replace("needs-rework:", "");
+          const target = extractReworkTarget(label);
+          if (target === null) continue;
           const targetColumn = AGENT_COLUMN_MAP.get(target);
 
           if (!targetColumn || targetColumn === agent.column) continue;
@@ -755,23 +757,17 @@ async function pollLoop(): Promise<void> {
         const items = await client.getItemsByStatus(agent.column);
 
         for (const item of items) {
-          // Label-based dispatch: run if the current agent hasn't tagged the ticket.
-          // ready:<agent> = agent completed successfully (skip)
-          // needs-rework:<agent> = agent flagged issues (skip — human must remove label to retry)
-          // wip:<agent> = agent currently running (skip — prevents double-dispatch)
-          // error:<agent> = agent crashed (skip — human must remove label to retry)
-          const readyLabel = `ready:${agent.name}`;
-          const reworkLabel = `needs-rework:${agent.name}`;
-          const wipLabel = `wip:${agent.name}`;
-          const errorLabel = `error:${agent.name}`;
-
-          if (item.labels.includes(readyLabel) || item.labels.includes(reworkLabel) || item.labels.includes(wipLabel) || item.labels.includes(errorLabel)) {
+          // Label-based dispatch: skip if any of ready:/needs-rework:/wip:/error:
+          // is already set for THIS agent. See shouldSkipDispatch in lib.ts.
+          if (shouldSkipDispatch(item.labels, agent.name)) {
             continue;
           }
 
-          // Remove stale labels from previous agents before dispatching
+          const wipLabel = `wip:${agent.name}`;
+
+          // Remove stale pipeline labels from previous agents before dispatching.
           for (const label of item.labels) {
-            if (label.startsWith("ready:") || label.startsWith("needs-rework:") || label.startsWith("wip:") || label.startsWith("error:")) {
+            if (isPipelineLabel(label)) {
               try {
                 await client.removeLabel(item.issueNumber, label);
                 console.log(`   🏷️  Removed stale ${label} from #${item.issueNumber}`);
@@ -851,9 +847,9 @@ async function pollLoop(): Promise<void> {
             execSync(`git checkout main && git pull`, { cwd: repoRoot, stdio: "pipe", timeout: 15_000 });
           } catch {}
 
-          // Clean up pipeline labels — they're noise on completed tickets
+          // Clean up pipeline labels — they're noise on completed tickets.
           for (const label of item.labels) {
-            if (label.startsWith("ready:") || label.startsWith("needs-rework:") || label.startsWith("wip:") || label.startsWith("error:")) {
+            if (isPipelineLabel(label)) {
               try { await client.removeLabel(item.issueNumber, label); } catch {}
             }
           }
