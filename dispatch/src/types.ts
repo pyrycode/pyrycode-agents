@@ -30,31 +30,31 @@ export const AGENTS: AgentConfig[] = [
   {
     name: "po",
     column: "Backlog",
-    claudeMdPath: "agents/po/CLAUDE.md",
+    claudeMdPath: "po/CLAUDE.md",
     description: "Product Owner — creates structured issues",
   },
   {
     name: "architect",
     column: "In Architecture",
-    claudeMdPath: "agents/architect/CLAUDE.md",
+    claudeMdPath: "architect/CLAUDE.md",
     description: "System Architect — defines Go interfaces, data flows, concurrency patterns",
   },
   {
     name: "developer",
     column: "In Development",
-    claudeMdPath: "agents/developer/CLAUDE.md",
+    claudeMdPath: "developer/CLAUDE.md",
     description: "Developer — implements Go code with tests",
   },
   {
     name: "code-review",
     column: "In Code Review",
-    claudeMdPath: "agents/code-review/CLAUDE.md",
+    claudeMdPath: "code-review/CLAUDE.md",
     description: "Code Reviewer — reviews PRs for Go quality and correctness",
   },
   {
     name: "documentation",
     column: "In Documentation",
-    claudeMdPath: "agents/documentation/CLAUDE.md",
+    claudeMdPath: "documentation/CLAUDE.md",
     description: "Documentation Agent — synthesizes project knowledge base",
   },
 ];

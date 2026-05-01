@@ -14,6 +14,9 @@
 
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { AGENTS } from "./types.js";
 import {
@@ -205,6 +208,37 @@ describe("AGENT_COLUMN_MAP", () => {
 
   test("size matches AGENTS (no duplicate names)", () => {
     assert.equal(AGENT_COLUMN_MAP.size, AGENTS.length);
+  });
+});
+
+describe("agent claudeMdPath resolution", () => {
+  test("paths are relative to agentsRepoRoot, NOT prefixed with 'agents/'", () => {
+    // The original paths were "agents/po/CLAUDE.md" etc., which only
+    // worked when agentsRepoRoot was buggy and pointed at the parent of
+    // agents/. With c72adb4 fixing that, the prefix was now wrong and
+    // resolved to agents/agents/po/CLAUDE.md. This test locks in that
+    // claudeMdPath is relative to agents/ (the actual root).
+    for (const agent of AGENTS) {
+      assert.ok(
+        !agent.claudeMdPath.startsWith("agents/"),
+        `${agent.name}.claudeMdPath should not start with "agents/" (got ${agent.claudeMdPath})`,
+      );
+    }
+  });
+
+  test("each agent's CLAUDE.md actually exists on disk", () => {
+    // Belt-and-suspenders. If someone moves a CLAUDE.md without updating
+    // types.ts, dispatch fails at runtime with "agent CLAUDE.md not
+    // found" — better to catch it in CI.
+    const __dirname = dirname(fileURLToPath(import.meta.url));
+    const agentsRoot = resolve(__dirname, "..", "..");
+    for (const agent of AGENTS) {
+      const path = resolve(agentsRoot, agent.claudeMdPath);
+      assert.ok(
+        existsSync(path),
+        `${agent.name}.claudeMdPath does not exist on disk: ${path}`,
+      );
+    }
   });
 });
 
