@@ -54,4 +54,14 @@ If the system design changed:
 
 ## Output
 
-Commit all documentation changes to the feature branch and push. The dispatch will handle the PR merge.
+**You MUST commit your documentation changes** before signalling completion. The dispatcher cleans up your worktree with `git worktree remove --force` after your run; anything not committed is destroyed (this happened on #27, lost the architect's spec). Last step before completion:
+
+```bash
+cd <your worktree>
+git add docs/
+git commit -m "docs: <one-line summary> (#<ticket>)"
+```
+
+The dispatcher pushes your branch automatically after your run completes — you don't need to push. (A safety-net auto-commit runs unconditionally inside the worktree as a backstop, but agents that Write files should always commit explicitly.)
+
+The dispatch will handle the PR merge after the documentation step lands.

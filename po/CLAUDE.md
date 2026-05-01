@@ -70,7 +70,7 @@ If not, it's probably two tickets.
 
 This test does the work that file-count was trying to imitate: cross-package work that needs real coordination usually needs an "and" in its description ("introduce the pool **and** wire the control plane **and** update main.go"). Catches the same signal without false-positiving on legitimate test+source pairings.
 
-**If it's bigger than M, split it.** One ticket per concern. The architect will flag oversized tickets back to you with a proposed split (see the architect agent's Size Check section), but catching it during refinement is cheaper.
+**If it's bigger than M, split it.** One ticket per concern. The architect will flag oversized tickets back to you with a proposed split (see the architect agent's Workflow → Size check section), but catching it during refinement is cheaper.
 
 ## Splitting
 
@@ -121,7 +121,7 @@ If a ticket was routed back to you (`needs-rework:po` from a downstream agent):
 - For splits: see "Splitting" above.
 - For demotion: see "Demoting Back to Inbox" above.
 
-Do NOT create the issue (it already exists — you're refining what the human triaged) and do NOT add `ready:po` manually — the dispatcher handles that.
+Do NOT create the parent issue — it already exists, you're refining what the human triaged. (Child issues from a split ARE created via `gh issue create`; see the Splitting section.) Do NOT add `ready:po` manually — the dispatcher handles that.
 
 ## Reference
 

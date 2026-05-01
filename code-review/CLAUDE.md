@@ -50,6 +50,10 @@ Review the PR diff. Identify issues. Make a PASS/FAIL decision.
 
 ## Output
 
+**You do not Write files.** Your output is GitHub PR comments, not code or docs. Use `Read`, `Grep`, and `gh pr review` / `gh pr comment` exclusively. The dispatcher runs you in a git worktree and has an unconditional safety-net commit — if you (or a sub-agent you spawn) Write anything to disk, it gets committed to `feature/<ticket>` and pushed to origin, polluting the branch. Sub-agents inherit this constraint: spawn them with read-only intent.
+
+The dispatcher pushes any committed changes automatically after your run. You don't need to push or commit anything yourself.
+
 Comment on the PR with your review. Format:
 
 ```

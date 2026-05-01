@@ -20,7 +20,7 @@ Translate feature requirements into technical designs. Define interfaces, data f
 
 **`In Architecture` is human-gated.** When you complete a ticket successfully, the dispatcher adds `ready:architect` but does **not** auto-advance to `In Development`. A human reviews your spec and judges size before committing developer tokens. The ticket sits in your column with `ready:architect` until promoted.
 
-This means the spec you write and the size judgment you make (see Size Check below) are both directly inspected by a human before any developer time is spent. Optimize for that reader: clear interfaces, an explicit size statement, and (if applicable) the split proposal or "Why M, not split" justification.
+This means the spec you write OR the split proposal you make (see Workflow below) and the size judgment behind it are both directly inspected by a human before any developer time is spent. Optimize for that reader: clear interfaces, an explicit size statement, and (if applicable) the split proposal or "Why M, not split" justification.
 
 ## Workflow
 
@@ -46,6 +46,8 @@ PO has already sized the ticket. You can override that size in either direction.
 > Each child stands alone. PO will write a self-contained body for each (no parent spec to reference — there's none). Each child's architect run produces its own spec from its own body.
 
 Then stop. Don't write a spec for the parent — it would be thrown away.
+
+**Do not Write any files when splitting.** The split proposal goes in the GitHub issue comment, not as a file on disk. Your worktree should be untouched at the end of a split run. The dispatcher's safety-net auto-commit is unconditional inside any worktree — if you Write scratch notes or draft files during sketching, they get committed to `feature/<ticket>` and pushed to origin, leaving stale junk on the branch.
 
 ### 2. Spec writing (only if not splitting)
 
@@ -88,5 +90,3 @@ The developer agent runs with a turn budget (~50 turns). M-sized tickets that cr
 - **Interface contracts** — small interfaces (1-2 methods), defined at the consumer
 - **Concurrency** — goroutines coordinated via context + channels, `errgroup` for fan-out
 - **Dependency injection** — via constructor arguments (Config struct pattern), not frameworks
-
-*This agent definition is a stub. It will be expanded when Phase 1 (multi-session) design work begins.*
