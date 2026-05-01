@@ -157,6 +157,24 @@ describe("AUTO_ADVANCE_RULES", () => {
     assert.equal(AUTO_ADVANCE_RULES[AUTO_ADVANCE_RULES.length - 1].to, "Done");
   });
 
+  test("Inbox is human-gated — no auto-advance rule references it", () => {
+    // Inbox is the human's column: anyone can create issues there, but no
+    // agent operates on Inbox tickets. Promotion to Backlog is a manual
+    // gesture (status edit). This test locks in the invariant.
+    for (const rule of AUTO_ADVANCE_RULES) {
+      assert.notEqual(
+        rule.from,
+        "Inbox",
+        `rule ${rule.readyLabel}: from must not be "Inbox" (human-gated column)`,
+      );
+      assert.notEqual(
+        rule.to,
+        "Inbox",
+        `rule ${rule.readyLabel}: to must not be "Inbox" (PO demotes via direct status edit, not auto-advance)`,
+      );
+    }
+  });
+
   test("chain has no gaps (each rule's `to` matches the next rule's `from`)", () => {
     // If a refactor splits a column or renames it, this catches the drift.
     for (let i = 0; i < AUTO_ADVANCE_RULES.length - 1; i++) {

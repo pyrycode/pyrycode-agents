@@ -202,6 +202,69 @@ export class GitHubProjectClient {
     return labels.map((l) => l.name);
   }
 
+  /**
+   * Create a new issue in the configured repo via the REST API.
+   * Returns both the issue number (for human-facing links) and the
+   * GraphQL node ID (needed for addItemToProject).
+   */
+  async createIssue(
+    title: string,
+    body: string,
+    labels: string[] = [],
+  ): Promise<{ number: number; nodeId: string; url: string }> {
+    const response = await fetchWithRetry(
+      `https://api.github.com/repos/${this.config.owner}/${this.config.repo}/issues`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `token ${this.config.token}`,
+          "Content-Type": "application/json",
+          Accept: "application/vnd.github+json",
+        },
+        body: JSON.stringify({ title, body, labels }),
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to create issue: ${response.status} ${response.statusText}`);
+    }
+
+    const issue: any = await response.json();
+    return {
+      number: issue.number,
+      nodeId: issue.node_id,
+      url: issue.html_url,
+    };
+  }
+
+  /**
+   * Add an existing issue (by GraphQL node ID) to the project. Returns the
+   * project item ID so the caller can immediately set its status.
+   *
+   * The combination `createIssue` + `addItemToProject` + `updateItemStatus`
+   * is the dispatchInbox flow: an issue lands in the project at the right
+   * status with a single sequence of mutations and no null-status race.
+   */
+  async addItemToProject(issueNodeId: string): Promise<string> {
+    if (!this.projectId) throw new Error("Not initialized");
+
+    const result: any = await this.gql(`
+      mutation($projectId: ID!, $contentId: ID!) {
+        addProjectV2ItemById(input: {
+          projectId: $projectId
+          contentId: $contentId
+        }) {
+          item { id }
+        }
+      }
+    `, {
+      projectId: this.projectId,
+      contentId: issueNodeId,
+    });
+
+    return result.addProjectV2ItemById.item.id;
+  }
+
   async addLabel(issueNumber: number, label: string): Promise<void> {
     const response = await fetchWithRetry(
       `https://api.github.com/repos/${this.config.owner}/${this.config.repo}/issues/${issueNumber}/labels`,

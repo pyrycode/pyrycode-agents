@@ -879,8 +879,26 @@ async function pollLoop(): Promise<void> {
   }
 }
 
-// Manual dispatch for PO agent
-async function dispatchPO(request: string): Promise<void> {
+// dispatchInbox: drop a rough ticket directly into the Inbox column.
+//
+// Replaces the old dispatchPO. The pre-2026-05-01 design ran the PO agent
+// on a synthetic ProjectItem (issueNumber=0) to create issues from CLI
+// requests — which conflated PO's two roles (creator + refiner) and
+// short-circuited the dispatcher's auto-label-on-success at line 584
+// (it can't label a fake issue). The new design splits the roles: this
+// function only creates the issue and lands it in Inbox; PO operates on
+// real Backlog tickets via the normal dispatchToAgent path after a human
+// promotes Inbox → Backlog.
+//
+// Three GraphQL/REST calls, in order:
+//   1. createIssue(title, body) — REST POST /repos/.../issues
+//   2. addItemToProject(nodeId) — GraphQL addProjectV2ItemById
+//   3. updateItemStatus(itemId, "Inbox") — GraphQL updateProjectV2ItemFieldValue
+//
+// All three must succeed; partial state would orphan the issue (created
+// but not on board, or on board but null-status). If a step fails, error
+// out clearly so the user can clean up manually.
+async function dispatchInbox(request: string): Promise<void> {
   const client = new GitHubProjectClient({
     owner: process.env.GITHUB_OWNER!,
     repo: process.env.GITHUB_REPO!,
@@ -891,50 +909,49 @@ async function dispatchPO(request: string): Promise<void> {
 
   await client.initialize();
 
-  const poAgent = AGENTS.find((a) => a.name === "po")!;
-  const fakeItem: ProjectItem = {
-    id: "manual",
-    issueId: "manual",
-    issueNumber: 0,
-    title: "New Feature Request",
-    body: request,
-    status: "Backlog",
-    labels: [],
-    url: "",
-  };
+  // First line of the request becomes the title, full request becomes the
+  // body. PO can rewrite both during refinement; this is just to give the
+  // issue an addressable shape.
+  const trimmed = request.trim();
+  const firstLine = trimmed.split(/\r?\n/)[0] ?? trimmed;
+  const title = firstLine.length > 100
+    ? firstLine.slice(0, 97).trimEnd() + "..."
+    : firstLine;
+  const body = trimmed;
 
-  // Snapshot open issue numbers before dispatch so we can detect new ones
-  const beforeIssues = new Set(
-    JSON.parse(
-      execSync(`gh issue list --limit 100 --state open --json number`, {
-        cwd: repoRoot, encoding: "utf-8",
-      })
-    ).map((i: { number: number }) => i.number)
-  );
+  console.log(`📥 Creating Inbox ticket: "${title}"`);
+  const issue = await client.createIssue(title, body);
+  console.log(`   Issue #${issue.number}: ${issue.url}`);
 
-  await dispatchToAgent(poAgent, fakeItem, client);
+  console.log(`   Adding to project board...`);
+  const itemId = await client.addItemToProject(issue.nodeId);
 
-  // Find issues created during dispatch (ones that didn't exist before)
-  const afterIssues: { number: number }[] = JSON.parse(
-    execSync(`gh issue list --limit 100 --state open --json number`, {
-      cwd: repoRoot, encoding: "utf-8",
-    })
-  );
-  const newIssues = afterIssues.filter((i) => !beforeIssues.has(i.number));
+  console.log(`   Setting status to Inbox...`);
+  await client.updateItemStatus(itemId, "Inbox");
 
-  if (newIssues.length > 0) {
-    console.log(`\n📋 PO created ${newIssues.length} issue(s): ${newIssues.map(i => `#${i.number}`).join(", ")}`);
-  } else {
-    console.log("\n⚠️  PO dispatch completed but no new issues were detected.");
-  }
+  console.log(`✅ #${issue.number} landed in Inbox.\n`);
+  console.log(`When you're ready for PO to refine it, move it to Backlog:`);
+  console.log(`   web UI → drag from Inbox to Backlog`);
+  console.log(`   or: gh project item-edit --id ${itemId} --project-id <id> --field-id <Status field id> --single-select-option-id <Backlog option id>`);
 }
 
 // Entry point
 const args = process.argv.slice(2);
 
-if (args[0] === "po" && args[1]) {
-  dispatchPO(args.slice(1).join(" ")).catch((e) => {
-    console.error("Fatal error in PO dispatch:", e);
+if (args[0] === "inbox" && args[1]) {
+  dispatchInbox(args.slice(1).join(" ")).catch((e) => {
+    console.error("Fatal error in inbox dispatch:", e);
+    process.exit(1);
+  });
+} else if (args[0] === "po" && args[1]) {
+  // Backwards-compat shim: old `pnpm start po "..."` now delegates to
+  // dispatchInbox with a deprecation notice. PO no longer runs on raw
+  // requests — it only refines triaged Backlog tickets.
+  console.warn("⚠️  `pnpm start po` is deprecated. Use `pnpm start inbox` instead.");
+  console.warn("    PO no longer creates tickets from raw requests; tickets land in Inbox");
+  console.warn("    and are promoted to Backlog manually when ready for PO to refine.\n");
+  dispatchInbox(args.slice(1).join(" ")).catch((e) => {
+    console.error("Fatal error in inbox dispatch:", e);
     process.exit(1);
   });
 } else {
