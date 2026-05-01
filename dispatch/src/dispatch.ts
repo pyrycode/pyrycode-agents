@@ -10,6 +10,7 @@ import {
   AUTO_ADVANCE_RULES,
   AGENT_COLUMN_MAP,
   MANUAL_ADVANCE_GATES,
+  MID_PIPELINE_COLUMNS,
   resolveAgentsRepoRoot,
   resolvePyrycodeRepoRoot,
   shouldSkipDispatch,
@@ -710,7 +711,52 @@ async function runClosedSweep(client: GitHubProjectClient): Promise<void> {
 // lib.ts so they can be unit-tested without spinning up the dispatcher.
 
 async function runAutoAdvance(client: GitHubProjectClient): Promise<void> {
+  // Strict WIP=1 pipeline: hold Backlog → In Architecture promotions if any
+  // non-errored ticket is mid-pipeline. One ticket flows end-to-end before
+  // the next starts. Errored tickets are excluded — they're stuck on
+  // exceptional human action and shouldn't block unrelated work.
+  //
+  // Same hold-the-floodgate gesture as the human gate: prevents the
+  // dispatcher from racing siblings into the same column when the upstream
+  // intent is "finish this one, then the next."
+  let inFlight = false;
+  try {
+    const midItems = await Promise.all(
+      MID_PIPELINE_COLUMNS.map(c => client.getItemsByStatus(c)),
+    );
+    inFlight = midItems.flat().some(
+      item =>
+        item.issueNumber > 0 &&
+        !item.labels.some(l => l.startsWith("error:")),
+    );
+  } catch (error: any) {
+    // If the in-flight probe fails, default to NOT holding (existing
+    // pre-WIP=1 behaviour). Better to over-advance than to deadlock the
+    // pipeline on a transient GraphQL error.
+    console.warn(`   ⚠️  In-flight probe failed; auto-advance proceeds without WIP gate: ${error.message}`);
+  }
+
   for (const rule of AUTO_ADVANCE_RULES) {
+    // Hold Backlog → In Architecture if anything is mid-pipeline. Other
+    // auto-advances proceed normally — once a ticket is past Backlog,
+    // we want it to keep flowing to Done.
+    if (rule.from === "Backlog" && inFlight) {
+      try {
+        const waiting = await client.getItemsByStatus("Backlog");
+        const ready = waiting.filter(
+          item =>
+            item.issueNumber > 0 &&
+            item.labels.includes(rule.readyLabel) &&
+            !item.labels.some(l => l.startsWith("needs-rework:") || l.startsWith("error:")),
+        );
+        if (ready.length > 0) {
+          const numbers = ready.map(i => `#${i.issueNumber}`).join(", ");
+          console.log(`   🛑 Backlog: ${numbers} held — another ticket is mid-pipeline (WIP=1)`);
+        }
+      } catch {}
+      continue;
+    }
+
     // Human-gated columns are the same gesture as Inbox → Backlog: a
     // human reviews the work and moves the ticket forward manually.
     // Skip auto-advance for those — the agent has already labelled

@@ -23,6 +23,7 @@ import {
   AUTO_ADVANCE_RULES,
   AGENT_COLUMN_MAP,
   MANUAL_ADVANCE_GATES,
+  MID_PIPELINE_COLUMNS,
   PIPELINE_LABEL_PREFIXES,
   resolveAgentsRepoRoot,
   resolvePyrycodeRepoRoot,
@@ -246,6 +247,43 @@ describe("MANUAL_ADVANCE_GATES", () => {
   test("Done is not gated (terminal column needs no further advance)", () => {
     // Done is the last column; gating it does nothing useful. Sanity check.
     assert.ok(!MANUAL_ADVANCE_GATES.has("Done"));
+  });
+});
+
+describe("MID_PIPELINE_COLUMNS", () => {
+  test("excludes Inbox, Backlog, Done", () => {
+    // Mid-pipeline = "in flight." Inbox and Backlog are pre-flight,
+    // Done is post-flight. Locks the WIP=1 pipeline rule's intent.
+    for (const off of ["Inbox", "Backlog", "Done"]) {
+      assert.ok(
+        !MID_PIPELINE_COLUMNS.includes(off),
+        `MID_PIPELINE_COLUMNS must not include "${off}"`,
+      );
+    }
+  });
+
+  test("every entry is a known agent column", () => {
+    // A column in MID_PIPELINE_COLUMNS that no agent owns is dead config.
+    const agentColumns = new Set(AGENT_COLUMN_MAP.values());
+    for (const col of MID_PIPELINE_COLUMNS) {
+      assert.ok(
+        agentColumns.has(col),
+        `MID_PIPELINE_COLUMNS references "${col}" but no agent owns it`,
+      );
+    }
+  });
+
+  test("contains every non-PO agent column", () => {
+    // The strict WIP=1 rule holds Backlog (PO's column) when any other
+    // agent's column has work. So every non-PO agent column must be in
+    // MID_PIPELINE_COLUMNS for the rule to bite uniformly.
+    for (const [name, col] of AGENT_COLUMN_MAP) {
+      if (name === "po") continue; // PO owns Backlog, which is pre-flight
+      assert.ok(
+        MID_PIPELINE_COLUMNS.includes(col),
+        `${name}'s column "${col}" should be in MID_PIPELINE_COLUMNS`,
+      );
+    }
   });
 });
 

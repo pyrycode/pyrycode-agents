@@ -49,6 +49,31 @@ export const MANUAL_ADVANCE_GATES: ReadonlySet<string> = new Set([
   "In Architecture",
 ]);
 
+/**
+ * Columns considered "mid-pipeline" for the strict-WIP=1 rule. A ticket
+ * sitting in any of these columns is in flight: actively progressing
+ * through agents, awaiting human gate, or transiently in rework.
+ *
+ * Backlog and Inbox are not mid-pipeline (work hasn't started). Done is
+ * not mid-pipeline (work is complete).
+ *
+ * Used by `runAutoAdvance` to hold Backlog → In Architecture promotions
+ * when something is already in flight, so one ticket flows end-to-end
+ * before the next starts.
+ *
+ * Tickets carrying any `error:*` label are excluded from the in-flight
+ * check by the caller — they're stuck on exceptional human action and
+ * shouldn't block unrelated work. Adding an `error:*` label is the
+ * escape hatch for parking a normal-path ticket too (e.g. a long
+ * human-gate delay where you want unrelated tickets to flow).
+ */
+export const MID_PIPELINE_COLUMNS: readonly string[] = [
+  "In Architecture",
+  "In Development",
+  "In Code Review",
+  "In Documentation",
+];
+
 // Built from AGENTS — single source of truth for the name → column mapping.
 export const AGENT_COLUMN_MAP: ReadonlyMap<string, string> = new Map(
   AGENTS.map((a: AgentConfig) => [a.name, a.column]),
