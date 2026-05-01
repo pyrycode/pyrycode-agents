@@ -31,6 +31,9 @@ import {
   shouldSkipDispatch,
   extractReworkTarget,
   isPipelineInFlight,
+  decideAutoAdvance,
+  decideReworkRoutes,
+  shouldAutoCommit,
   findAdvanceRule,
 } from "./lib.js";
 
@@ -363,6 +366,299 @@ describe("isPipelineInFlight", () => {
         { issueNumber: 100, labels: ["error:parked"] },
       ]),
       false,
+    );
+  });
+});
+
+describe("decideAutoAdvance", () => {
+  // Helper to build the itemsByColumn map ergonomically.
+  type Item = { id: string; issueNumber: number; labels: string[] };
+  const items = (...rows: [string, Item[]][]): Map<string, Item[]> => new Map(rows);
+
+  test("empty pipeline → no advances, no holds, no gates", () => {
+    const d = decideAutoAdvance(AUTO_ADVANCE_RULES, MANUAL_ADVANCE_GATES, items(), false);
+    assert.deepEqual(d.advances, []);
+    assert.deepEqual(d.backlogHeld, []);
+    assert.deepEqual(d.gatedAwaiting, []);
+  });
+
+  test("single ready:po in Backlog, pipeline empty → advance to In Architecture", () => {
+    const d = decideAutoAdvance(
+      AUTO_ADVANCE_RULES,
+      MANUAL_ADVANCE_GATES,
+      items(["Backlog", [{ id: "i1", issueNumber: 28, labels: ["ready:po", "size:s"] }]]),
+      false,
+    );
+    assert.equal(d.advances.length, 1);
+    assert.deepEqual(d.advances[0], {
+      itemId: "i1",
+      issueNumber: 28,
+      fromColumn: "Backlog",
+      toColumn: "In Architecture",
+    });
+    assert.deepEqual(d.backlogHeld, []);
+  });
+
+  test("two ready:po in Backlog, pipeline empty → first advances, second held (WIP=1 within-cycle)", () => {
+    // This is the bug from b39f569 — without the within-cycle stop,
+    // both #28 and #29 would have advanced in the same cycle.
+    const d = decideAutoAdvance(
+      AUTO_ADVANCE_RULES,
+      MANUAL_ADVANCE_GATES,
+      items(["Backlog", [
+        { id: "i1", issueNumber: 28, labels: ["ready:po", "size:s"] },
+        { id: "i2", issueNumber: 29, labels: ["ready:po", "size:s"] },
+      ]]),
+      false,
+    );
+    assert.equal(d.advances.length, 1);
+    assert.equal(d.advances[0].issueNumber, 28);
+    assert.deepEqual(d.backlogHeld, [29]);
+  });
+
+  test("ready:po in Backlog while pipeline already in flight → all held, no advance", () => {
+    const d = decideAutoAdvance(
+      AUTO_ADVANCE_RULES,
+      MANUAL_ADVANCE_GATES,
+      items(["Backlog", [{ id: "i1", issueNumber: 29, labels: ["ready:po"] }]]),
+      true,
+    );
+    assert.deepEqual(d.advances, []);
+    assert.deepEqual(d.backlogHeld, [29]);
+  });
+
+  test("In Architecture is gated → no advance, gatedAwaiting populated", () => {
+    const d = decideAutoAdvance(
+      AUTO_ADVANCE_RULES,
+      MANUAL_ADVANCE_GATES,
+      items(["In Architecture", [{ id: "i1", issueNumber: 28, labels: ["ready:architect"] }]]),
+      true,
+    );
+    assert.deepEqual(d.advances, []);
+    assert.equal(d.gatedAwaiting.length, 1);
+    assert.equal(d.gatedAwaiting[0].column, "In Architecture");
+    assert.deepEqual(d.gatedAwaiting[0].itemNumbers, [28]);
+  });
+
+  test("needs-rework label blocks advance even with ready:po", () => {
+    const d = decideAutoAdvance(
+      AUTO_ADVANCE_RULES,
+      MANUAL_ADVANCE_GATES,
+      items(["Backlog", [{ id: "i1", issueNumber: 28, labels: ["ready:po", "needs-rework:po"] }]]),
+      false,
+    );
+    assert.deepEqual(d.advances, []);
+  });
+
+  test("error label blocks advance even with ready:po", () => {
+    const d = decideAutoAdvance(
+      AUTO_ADVANCE_RULES,
+      MANUAL_ADVANCE_GATES,
+      items(["Backlog", [{ id: "i1", issueNumber: 28, labels: ["ready:po", "error:po"] }]]),
+      false,
+    );
+    assert.deepEqual(d.advances, []);
+  });
+
+  test("non-issue items (issueNumber <= 0) skip", () => {
+    const d = decideAutoAdvance(
+      AUTO_ADVANCE_RULES,
+      MANUAL_ADVANCE_GATES,
+      items(["Backlog", [{ id: "i1", issueNumber: 0, labels: ["ready:po"] }]]),
+      false,
+    );
+    assert.deepEqual(d.advances, []);
+  });
+
+  test("missing readyLabel → no advance", () => {
+    const d = decideAutoAdvance(
+      AUTO_ADVANCE_RULES,
+      MANUAL_ADVANCE_GATES,
+      items(["Backlog", [{ id: "i1", issueNumber: 28, labels: ["size:s"] }]]),
+      false,
+    );
+    assert.deepEqual(d.advances, []);
+  });
+
+  test("mid-pipeline advance proceeds even when pipeline in-flight", () => {
+    // A ticket sitting in In Development with ready:developer should advance
+    // to In Code Review even though another ticket is gated at In Architecture.
+    // WIP=1 holds NEW tickets out; in-flight tickets keep flowing forward.
+    const d = decideAutoAdvance(
+      AUTO_ADVANCE_RULES,
+      MANUAL_ADVANCE_GATES,
+      items(
+        ["In Architecture", [{ id: "i1", issueNumber: 28, labels: ["ready:architect"] }]],
+        ["In Development",  [{ id: "i2", issueNumber: 30, labels: ["ready:developer"] }]],
+      ),
+      true,
+    );
+    const devAdvance = d.advances.find(a => a.fromColumn === "In Development");
+    assert.ok(devAdvance, "expected an advance from In Development");
+    assert.equal(devAdvance!.issueNumber, 30);
+    assert.equal(devAdvance!.toColumn, "In Code Review");
+  });
+
+  test("multiple mid-pipeline advances in one decision", () => {
+    // Unusual but possible: dev finishes ticket X, code-review finishes ticket Y,
+    // both ready in same cycle. Both should advance.
+    const d = decideAutoAdvance(
+      AUTO_ADVANCE_RULES,
+      MANUAL_ADVANCE_GATES,
+      items(
+        ["In Development", [{ id: "i1", issueNumber: 30, labels: ["ready:developer"] }]],
+        ["In Code Review", [{ id: "i2", issueNumber: 31, labels: ["ready:code-review"] }]],
+      ),
+      true,
+    );
+    assert.equal(d.advances.length, 2);
+    assert.ok(d.advances.some(a => a.issueNumber === 30 && a.toColumn === "In Code Review"));
+    assert.ok(d.advances.some(a => a.issueNumber === 31 && a.toColumn === "In Documentation"));
+  });
+});
+
+describe("decideReworkRoutes", () => {
+  type Item = { id: string; issueNumber: number; labels: string[] };
+  const items = (...rows: [string, Item[]][]): Map<string, Item[]> => new Map(rows);
+
+  test("empty pipeline → no routes", () => {
+    const r = decideReworkRoutes(AGENT_COLUMN_MAP, items());
+    assert.deepEqual(r, []);
+  });
+
+  test("needs-rework:po in In Architecture → route to Backlog", () => {
+    // The case from #27 today: architect-detected oversize sent back to PO.
+    const r = decideReworkRoutes(
+      AGENT_COLUMN_MAP,
+      items(["In Architecture", [{
+        id: "i1",
+        issueNumber: 27,
+        labels: ["ready:architect", "size:m", "needs-rework:po"],
+      }]]),
+    );
+    assert.equal(r.length, 1);
+    assert.equal(r[0].issueNumber, 27);
+    assert.equal(r[0].fromColumn, "In Architecture");
+    assert.equal(r[0].toColumn, "Backlog");
+    assert.equal(r[0].triggerLabel, "needs-rework:po");
+  });
+
+  test("self-loop (needs-rework:architect in In Architecture) → no route", () => {
+    // Routing to the same column is a no-op; the agent's already there.
+    // The dispatcher handles re-dispatch via shouldSkipDispatch.
+    const r = decideReworkRoutes(
+      AGENT_COLUMN_MAP,
+      items(["In Architecture", [{
+        id: "i1",
+        issueNumber: 27,
+        labels: ["needs-rework:architect"],
+      }]]),
+    );
+    assert.deepEqual(r, []);
+  });
+
+  test("rework label strips ready:/error:/wip: along with itself", () => {
+    // The dispatcher cleans up stale state-prefix labels on rework so the
+    // ticket arrives in the target column with a clean slate. Lock that.
+    const r = decideReworkRoutes(
+      AGENT_COLUMN_MAP,
+      items(["In Architecture", [{
+        id: "i1",
+        issueNumber: 27,
+        labels: ["ready:architect", "wip:architect", "error:architect", "needs-rework:po", "size:m"],
+      }]]),
+    );
+    assert.equal(r.length, 1);
+    const stripped = new Set(r[0].labelsToStrip);
+    assert.ok(stripped.has("needs-rework:po"));
+    assert.ok(stripped.has("ready:architect"));
+    assert.ok(stripped.has("wip:architect"));
+    assert.ok(stripped.has("error:architect"));
+    // Non-state labels survive
+    assert.ok(!stripped.has("size:m"));
+  });
+
+  test("malformed needs-rework: (no target) → no route", () => {
+    // extractReworkTarget returns null for bare "needs-rework:" — guards
+    // against typos producing accidental routes.
+    const r = decideReworkRoutes(
+      AGENT_COLUMN_MAP,
+      items(["In Architecture", [{
+        id: "i1",
+        issueNumber: 27,
+        labels: ["needs-rework:"],
+      }]]),
+    );
+    assert.deepEqual(r, []);
+  });
+
+  test("unknown rework target → no route", () => {
+    // needs-rework:designer when designer isn't an agent → no targetColumn.
+    const r = decideReworkRoutes(
+      AGENT_COLUMN_MAP,
+      items(["In Architecture", [{
+        id: "i1",
+        issueNumber: 27,
+        labels: ["needs-rework:designer"],
+      }]]),
+    );
+    assert.deepEqual(r, []);
+  });
+
+  test("non-issue items (issueNumber <= 0) skip", () => {
+    const r = decideReworkRoutes(
+      AGENT_COLUMN_MAP,
+      items(["In Architecture", [{
+        id: "i1",
+        issueNumber: 0,
+        labels: ["needs-rework:po"],
+      }]]),
+    );
+    assert.deepEqual(r, []);
+  });
+
+  test("multiple needs-rework labels on one item → first valid route wins", () => {
+    // Pathological case: two rework labels. We route on the first valid one
+    // (label order in the array). Keeps the function deterministic.
+    const r = decideReworkRoutes(
+      AGENT_COLUMN_MAP,
+      items(["In Code Review", [{
+        id: "i1",
+        issueNumber: 50,
+        labels: ["needs-rework:developer", "needs-rework:po"],
+      }]]),
+    );
+    assert.equal(r.length, 1);
+    assert.equal(r[0].triggerLabel, "needs-rework:developer");
+    assert.equal(r[0].toColumn, "In Development");
+  });
+});
+
+describe("shouldAutoCommit", () => {
+  test("empty git status → false", () => {
+    assert.equal(shouldAutoCommit(""), false);
+  });
+
+  test("whitespace-only git status → false", () => {
+    // Stripping whitespace is what guards us against an accidental commit
+    // when the git status output is just "\n" or trailing spaces.
+    assert.equal(shouldAutoCommit("\n"), false);
+    assert.equal(shouldAutoCommit("   "), false);
+    assert.equal(shouldAutoCommit("\t\n  "), false);
+  });
+
+  test("modified file → true", () => {
+    assert.equal(shouldAutoCommit(" M docs/specs/architecture/27-foo.md"), true);
+  });
+
+  test("untracked file → true", () => {
+    assert.equal(shouldAutoCommit("?? new.go"), true);
+  });
+
+  test("multiple changes → true", () => {
+    assert.equal(
+      shouldAutoCommit(" M file1.go\n?? file2.go\nA  file3.go"),
+      true,
     );
   });
 });

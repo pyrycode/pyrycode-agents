@@ -102,6 +102,213 @@ export function isPipelineInFlight(
   );
 }
 
+// --------- Auto-advance decision ---------
+
+/** Minimum item shape the decision functions need. Subset of `ProjectItem`. */
+export interface DecisionItem {
+  id: string;
+  issueNumber: number;
+  labels: string[];
+}
+
+/** A single column-to-column move the dispatcher will execute. */
+export interface AdvanceAction {
+  itemId: string;
+  issueNumber: number;
+  fromColumn: string;
+  toColumn: string;
+}
+
+/** What `decideAutoAdvance` returns: advances + diagnostics for logging. */
+export interface AutoAdvanceDecision {
+  advances: AdvanceAction[];
+  /** Items currently sitting at a human gate (logged as 🚦 awaiting review). */
+  gatedAwaiting: { column: string; itemNumbers: number[] }[];
+  /** Items in Backlog held by WIP=1 (logged as 🛑 held). */
+  backlogHeld: number[];
+}
+
+/**
+ * Pure decision function for `runAutoAdvance`. Given the rule table, gate
+ * set, current items in each `from` column, and whether the pipeline is
+ * already in flight, return the list of advances to perform plus the
+ * diagnostic info the caller needs to log gate/hold heartbeats.
+ *
+ * Semantics:
+ *   - **Gated columns** (in MANUAL_ADVANCE_GATES): no advance even when
+ *     `ready:<agent>` is set. Eligible items are reported in `gatedAwaiting`
+ *     for heartbeat logging.
+ *   - **Backlog when in-flight**: held by WIP=1. Eligible items are reported
+ *     in `backlogHeld`.
+ *   - **Backlog when free**: advance the FIRST eligible item only. The rest
+ *     are reported in `backlogHeld` (within-cycle WIP=1 — locked in by
+ *     b39f569 after fc1c7fc shipped without it).
+ *   - **Mid-pipeline columns**: advance ALL eligible items. Once a ticket
+ *     is past Backlog we want it to keep flowing.
+ *   - An item is **eligible** when it has the rule's `readyLabel`, has a
+ *     positive `issueNumber`, and carries no `needs-rework:*` or `error:*`
+ *     label.
+ */
+export function decideAutoAdvance(
+  rules: readonly AdvanceRule[],
+  gates: ReadonlySet<string>,
+  itemsByColumn: ReadonlyMap<string, readonly DecisionItem[]>,
+  inFlight: boolean,
+): AutoAdvanceDecision {
+  const advances: AdvanceAction[] = [];
+  const gatedAwaiting: { column: string; itemNumbers: number[] }[] = [];
+  const backlogHeld: number[] = [];
+  let cycleInFlight = inFlight;
+
+  const isEligible = (item: DecisionItem, readyLabel: string): boolean =>
+    item.issueNumber > 0 &&
+    item.labels.includes(readyLabel) &&
+    !item.labels.some(l => l.startsWith("needs-rework:") || l.startsWith("error:"));
+
+  for (const rule of rules) {
+    const all = itemsByColumn.get(rule.from) ?? [];
+    const eligible = all.filter(item => isEligible(item, rule.readyLabel));
+
+    if (gates.has(rule.from)) {
+      if (eligible.length > 0) {
+        gatedAwaiting.push({
+          column: rule.from,
+          itemNumbers: eligible.map(i => i.issueNumber),
+        });
+      }
+      continue;
+    }
+
+    if (rule.from === "Backlog") {
+      if (cycleInFlight) {
+        // Already in flight — hold every eligible Backlog item.
+        backlogHeld.push(...eligible.map(i => i.issueNumber));
+        continue;
+      }
+      if (eligible.length === 0) continue;
+      // Advance the first; hold the rest within this cycle.
+      const head = eligible[0];
+      advances.push({
+        itemId: head.id,
+        issueNumber: head.issueNumber,
+        fromColumn: rule.from,
+        toColumn: rule.to,
+      });
+      cycleInFlight = true;
+      if (eligible.length > 1) {
+        backlogHeld.push(...eligible.slice(1).map(i => i.issueNumber));
+      }
+      continue;
+    }
+
+    // Mid-pipeline: advance every eligible item.
+    for (const item of eligible) {
+      advances.push({
+        itemId: item.id,
+        issueNumber: item.issueNumber,
+        fromColumn: rule.from,
+        toColumn: rule.to,
+      });
+    }
+  }
+
+  return { advances, gatedAwaiting, backlogHeld };
+}
+
+// --------- Rework routing decision ---------
+
+/** A single rework move + the labels the dispatcher will strip on routing. */
+export interface ReworkRoute {
+  itemId: string;
+  issueNumber: number;
+  fromColumn: string;
+  toColumn: string;
+  /** The needs-rework:<target> label that triggered this route. */
+  triggerLabel: string;
+  /** Labels to remove on routing — includes the trigger plus any
+   *  ready:/wip:/error: state labels (so the target column receives a
+   *  clean ticket, ready for re-dispatch). Non-state labels (size:,
+   *  priority:, custom tags) are preserved. */
+  labelsToStrip: string[];
+}
+
+/**
+ * Pure decision function for `runReworkRouting`. Given the agent→column
+ * map and current items in each column, return the list of rework routes
+ * to apply.
+ *
+ * Per item with one or more `needs-rework:<target>` labels, the FIRST valid
+ * label (by array order) wins:
+ *   - Item must have `issueNumber > 0`.
+ *   - Target must extract cleanly via `extractReworkTarget` (rejects bare
+ *     `needs-rework:` and non-rework labels).
+ *   - Target must be a known agent (in `agentColumnMap`).
+ *   - Target's column must differ from the item's current column —
+ *     self-loops aren't routes; the dispatcher's `shouldSkipDispatch`
+ *     handles re-dispatch on `needs-rework:<self>`.
+ *
+ * Pure function over already-collected items; the caller does the I/O
+ * (status updates and label removals).
+ */
+export function decideReworkRoutes(
+  agentColumnMap: ReadonlyMap<string, string>,
+  itemsByColumn: ReadonlyMap<string, readonly DecisionItem[]>,
+): ReworkRoute[] {
+  const routes: ReworkRoute[] = [];
+
+  for (const [fromColumn, items] of itemsByColumn) {
+    for (const item of items) {
+      if (item.issueNumber <= 0) continue;
+
+      // First valid rework label wins. Iterate in array order for
+      // determinism — same order GitHub returns from the labels query.
+      for (const label of item.labels) {
+        const target = extractReworkTarget(label);
+        if (target === null) continue;
+        const targetColumn = agentColumnMap.get(target);
+        if (!targetColumn) continue;
+        if (targetColumn === fromColumn) continue; // self-loop
+
+        const labelsToStrip = [
+          label,
+          ...item.labels.filter(l =>
+            l !== label &&
+            (l.startsWith("ready:") || l.startsWith("wip:") || l.startsWith("error:")),
+          ),
+        ];
+
+        routes.push({
+          itemId: item.id,
+          issueNumber: item.issueNumber,
+          fromColumn,
+          toColumn: targetColumn,
+          triggerLabel: label,
+          labelsToStrip,
+        });
+        break; // first valid rework label wins
+      }
+    }
+  }
+
+  return routes;
+}
+
+// --------- Auto-commit safety net ---------
+
+/**
+ * True if the worktree has uncommitted changes that the dispatcher should
+ * auto-commit before pushing. Catches agents that wrote files but forgot
+ * to commit (the bug that destroyed #27's spec via `git worktree remove
+ * --force`).
+ *
+ * Input is the raw output of `git status --porcelain`. Whitespace-only
+ * output is treated as clean — guards against false positives from
+ * trailing newlines or shell padding.
+ */
+export function shouldAutoCommit(gitStatusOutput: string): boolean {
+  return gitStatusOutput.trim().length > 0;
+}
+
 // Built from AGENTS — single source of truth for the name → column mapping.
 export const AGENT_COLUMN_MAP: ReadonlyMap<string, string> = new Map(
   AGENTS.map((a: AgentConfig) => [a.name, a.column]),
