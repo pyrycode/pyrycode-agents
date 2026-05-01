@@ -4,7 +4,9 @@
   "type": "module",
   "scripts": {
     "start": "tsx src/dispatch.ts",
-    "watch": "tsx --watch src/dispatch.ts"
+    "watch": "tsx --watch src/dispatch.ts",
+    "test": "tsx --test src/*.test.ts",
+    "typecheck": "tsc --noEmit -p ."
   },
   "devDependencies": {
     "@types/node": "^25.5.0",

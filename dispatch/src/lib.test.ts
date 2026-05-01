@@ -1,0 +1,236 @@
+// Unit tests for the pure logic the dispatcher depends on. Run with:
+//
+//   pnpm test
+//
+// or directly:
+//
+//   pnpm exec tsx --test src/lib.test.ts
+//
+// These tests cover the parts that broke in real life or could break
+// silently in the future (path resolution, label parsing, the auto-advance
+// chain, agent column consistency). Side-effecting code (GraphQL, gh CLI,
+// claude subprocess, worktree management) is not tested here — the
+// validation ticket is the integration check for that surface.
+
+import { describe, test } from "node:test";
+import assert from "node:assert/strict";
+
+import { AGENTS } from "./types.js";
+import {
+  AUTO_ADVANCE_RULES,
+  AGENT_COLUMN_MAP,
+  PIPELINE_LABEL_PREFIXES,
+  resolveAgentsRepoRoot,
+  isPipelineLabel,
+  shouldSkipDispatch,
+  extractReworkTarget,
+  findAdvanceRule,
+} from "./lib.js";
+
+describe("resolveAgentsRepoRoot", () => {
+  test("resolves to agents/ from agents/dispatch/src/ (the bug from c72adb4)", () => {
+    // The original bug used "../../.." and landed at the parent of agents/
+    // (the pyrycode/ Go repo). The fix is "../..". Lock it in.
+    const got = resolveAgentsRepoRoot("/work/pyrycode/agents/dispatch/src");
+    assert.equal(got, "/work/pyrycode/agents");
+  });
+
+  test("normalizes trailing slashes", () => {
+    const got = resolveAgentsRepoRoot("/work/pyrycode/agents/dispatch/src/");
+    assert.equal(got, "/work/pyrycode/agents");
+  });
+});
+
+describe("isPipelineLabel", () => {
+  test("matches all four pipeline prefixes", () => {
+    assert.equal(isPipelineLabel("ready:po"), true);
+    assert.equal(isPipelineLabel("needs-rework:developer"), true);
+    assert.equal(isPipelineLabel("wip:architect"), true);
+    assert.equal(isPipelineLabel("error:code-review"), true);
+  });
+
+  test("rejects non-pipeline labels", () => {
+    assert.equal(isPipelineLabel("size:s"), false);
+    assert.equal(isPipelineLabel("enhancement"), false);
+    assert.equal(isPipelineLabel("bug"), false);
+    assert.equal(isPipelineLabel(""), false);
+  });
+
+  test("rejects legacy labels that look pipeline-ish but aren't", () => {
+    // The old labels existed before the per-agent prefix scheme.
+    assert.equal(isPipelineLabel("ready-for-review"), false);
+    assert.equal(isPipelineLabel("needs-rework"), false);
+  });
+});
+
+describe("shouldSkipDispatch", () => {
+  test("skips when ANY of the four prefixes is set for the same agent", () => {
+    for (const prefix of PIPELINE_LABEL_PREFIXES) {
+      assert.equal(
+        shouldSkipDispatch([`${prefix}developer`], "developer"),
+        true,
+        `should skip on ${prefix}developer for agent developer`,
+      );
+    }
+  });
+
+  test("does NOT skip when only OTHER agents' labels are present", () => {
+    // The bug this guards against: stripping all pipeline labels would
+    // skip dispatch even for agents that haven't run yet.
+    assert.equal(
+      shouldSkipDispatch(["ready:po", "ready:architect", "wip:developer"], "code-review"),
+      false,
+    );
+  });
+
+  test("does NOT skip on empty labels", () => {
+    assert.equal(shouldSkipDispatch([], "developer"), false);
+  });
+
+  test("does NOT skip on non-pipeline labels", () => {
+    assert.equal(shouldSkipDispatch(["enhancement", "size:m"], "developer"), false);
+  });
+
+  test("matches every agent in AGENTS without panicking on hyphens", () => {
+    // 'code-review' has a hyphen — make sure prefix concatenation works.
+    for (const agent of AGENTS) {
+      assert.equal(shouldSkipDispatch([`ready:${agent.name}`], agent.name), true);
+      assert.equal(shouldSkipDispatch([], agent.name), false);
+    }
+  });
+});
+
+describe("extractReworkTarget", () => {
+  test("extracts agent name from valid rework labels", () => {
+    assert.equal(extractReworkTarget("needs-rework:po"), "po");
+    assert.equal(extractReworkTarget("needs-rework:architect"), "architect");
+    assert.equal(extractReworkTarget("needs-rework:code-review"), "code-review");
+    assert.equal(extractReworkTarget("needs-rework:documentation"), "documentation");
+  });
+
+  test("returns null for non-rework labels", () => {
+    assert.equal(extractReworkTarget("ready:po"), null);
+    assert.equal(extractReworkTarget("wip:developer"), null);
+    assert.equal(extractReworkTarget("size:s"), null);
+    assert.equal(extractReworkTarget(""), null);
+  });
+
+  test("returns null for the malformed empty-target form", () => {
+    // Someone could type just `needs-rework:` without a target. Should
+    // not silently succeed with an empty agent name.
+    assert.equal(extractReworkTarget("needs-rework:"), null);
+  });
+
+  test("does NOT match the legacy 'needs-rework' label (no colon)", () => {
+    // The pre-prefix legacy label is stripped separately in pollLoop.
+    assert.equal(extractReworkTarget("needs-rework"), null);
+  });
+});
+
+describe("AUTO_ADVANCE_RULES", () => {
+  test("first rule starts at Backlog, last rule ends at Done", () => {
+    assert.equal(AUTO_ADVANCE_RULES[0].from, "Backlog");
+    assert.equal(AUTO_ADVANCE_RULES[AUTO_ADVANCE_RULES.length - 1].to, "Done");
+  });
+
+  test("chain has no gaps (each rule's `to` matches the next rule's `from`)", () => {
+    // If a refactor splits a column or renames it, this catches the drift.
+    for (let i = 0; i < AUTO_ADVANCE_RULES.length - 1; i++) {
+      assert.equal(
+        AUTO_ADVANCE_RULES[i].to,
+        AUTO_ADVANCE_RULES[i + 1].from,
+        `rule ${i} ends at ${AUTO_ADVANCE_RULES[i].to} but rule ${i + 1} starts at ${AUTO_ADVANCE_RULES[i + 1].from}`,
+      );
+    }
+  });
+
+  test("every readyLabel matches a known agent", () => {
+    const knownAgents = new Set(AGENTS.map((a) => a.name));
+    for (const rule of AUTO_ADVANCE_RULES) {
+      const agentName = rule.readyLabel.replace("ready:", "");
+      assert.ok(
+        knownAgents.has(agentName),
+        `rule readyLabel ${rule.readyLabel} references unknown agent ${agentName}`,
+      );
+    }
+  });
+
+  test("each rule's `from` column is owned by its readyLabel's agent", () => {
+    // The `from` column should be the column of the agent whose `ready:`
+    // label triggers the advance — i.e. PO's column is Backlog, architect's
+    // is In Architecture, etc.
+    for (const rule of AUTO_ADVANCE_RULES) {
+      const agentName = rule.readyLabel.replace("ready:", "");
+      const expectedColumn = AGENT_COLUMN_MAP.get(agentName);
+      assert.equal(
+        rule.from,
+        expectedColumn,
+        `rule ${rule.readyLabel} should advance from agent's column (${expectedColumn}), got ${rule.from}`,
+      );
+    }
+  });
+
+  test("five rules — one per agent (no missing or extra stages)", () => {
+    assert.equal(AUTO_ADVANCE_RULES.length, AGENTS.length);
+  });
+});
+
+describe("AGENT_COLUMN_MAP", () => {
+  test("contains every agent in AGENTS", () => {
+    for (const agent of AGENTS) {
+      assert.equal(AGENT_COLUMN_MAP.get(agent.name), agent.column);
+    }
+  });
+
+  test("size matches AGENTS (no duplicate names)", () => {
+    assert.equal(AGENT_COLUMN_MAP.size, AGENTS.length);
+  });
+});
+
+describe("findAdvanceRule", () => {
+  test("returns the matching rule for a (column, ready label) pair", () => {
+    const rule = findAdvanceRule(
+      AUTO_ADVANCE_RULES,
+      "In Architecture",
+      ["ready:architect"],
+    );
+    assert.ok(rule);
+    assert.equal(rule.to, "In Development");
+  });
+
+  test("returns null when ready label is missing", () => {
+    const rule = findAdvanceRule(
+      AUTO_ADVANCE_RULES,
+      "In Architecture",
+      ["wip:architect"],
+    );
+    assert.equal(rule, null);
+  });
+
+  test("returns null when ready label belongs to a different column", () => {
+    // ready:developer in Architecture column — wrong stage.
+    const rule = findAdvanceRule(
+      AUTO_ADVANCE_RULES,
+      "In Architecture",
+      ["ready:developer"],
+    );
+    assert.equal(rule, null);
+  });
+
+  test("returns null for an unknown column", () => {
+    const rule = findAdvanceRule(
+      AUTO_ADVANCE_RULES,
+      "Some Bogus Column",
+      ["ready:po"],
+    );
+    assert.equal(rule, null);
+  });
+
+  test("matches every advance step against its rule", () => {
+    // Sanity-check: walking the chain end-to-end resolves cleanly.
+    for (const rule of AUTO_ADVANCE_RULES) {
+      const found = findAdvanceRule(AUTO_ADVANCE_RULES, rule.from, [rule.readyLabel]);
+      assert.equal(found, rule);
+    }
+  });
+});
