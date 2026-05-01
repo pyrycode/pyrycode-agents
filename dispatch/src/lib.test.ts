@@ -238,19 +238,21 @@ describe("MANUAL_ADVANCE_GATES", () => {
     }
   });
 
-  test("In Architecture is gated (architect → developer requires human review)", () => {
-    // Locks in the policy decided 2026-05-01 late: the architect's spec
-    // and proposed size must be human-reviewed before committing
-    // developer tokens. Removing this entry should be a deliberate
-    // policy change, not an accident.
-    assert.ok(
-      MANUAL_ADVANCE_GATES.has("In Architecture"),
-      "In Architecture must be in MANUAL_ADVANCE_GATES — architect-to-dev needs human review",
-    );
+  test("currently no gates — pipeline runs end-to-end without forced human pauses (2026-05-02)", () => {
+    // The architect → developer human gate was added on 2026-05-01 as a
+    // safety net for oversized specs, then removed on 2026-05-02 once
+    // the size policy was enforced in code (architect either sizes ≤M
+    // or splits via needs-rework:po). The gate was duplicating safeguards.
+    //
+    // Adding a future gate is a deliberate policy decision and should
+    // require updating this test. The set is the durable record of
+    // "what's gated right now"; emptiness is meaningful.
+    assert.equal(MANUAL_ADVANCE_GATES.size, 0);
   });
 
   test("Done is not gated (terminal column needs no further advance)", () => {
-    // Done is the last column; gating it does nothing useful. Sanity check.
+    // Sanity check: even if a future policy adds a gate, Done shouldn't
+    // be in the set — gating a terminal column does nothing.
     assert.ok(!MANUAL_ADVANCE_GATES.has("Done"));
   });
 });
@@ -466,10 +468,17 @@ describe("decideAutoAdvance", () => {
     assert.deepEqual(d.backlogHeld, [29]);
   });
 
-  test("In Architecture is gated → no advance, gatedAwaiting populated", () => {
+  test("gated column skips advance and reports in gatedAwaiting (mechanism test)", () => {
+    // Tests the GATING MECHANISM independent of which columns are
+    // currently gated in production. Production MANUAL_ADVANCE_GATES is
+    // empty as of 2026-05-02 (the architect→developer gate was removed
+    // once the size policy was enforced in code). Pass a custom set so
+    // this test still exercises the function's gating behaviour even
+    // when production policy doesn't gate anything.
+    const customGates: ReadonlySet<string> = new Set(["In Architecture"]);
     const d = decideAutoAdvance(
       AUTO_ADVANCE_RULES,
-      MANUAL_ADVANCE_GATES,
+      customGates,
       items(["In Architecture", [{ id: "i1", issueNumber: 28, labels: ["ready:architect"] }]]),
       true,
     );

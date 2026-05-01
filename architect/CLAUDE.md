@@ -16,12 +16,6 @@ Translate feature requirements into technical designs. Define interfaces, data f
    ```
 4. Read `CODING-STYLE.md` — designs must follow established conventions
 
-## Workflow Note — Human Gate After Your Stage
-
-**`In Architecture` is human-gated.** When you complete a ticket successfully, the dispatcher adds `ready:architect` but does **not** auto-advance to `In Development`. A human reviews your spec and judges size before committing developer tokens. The ticket sits in your column with `ready:architect` until promoted.
-
-This means the spec you write OR the split proposal you make (see Workflow below) and the size judgment behind it are both directly inspected by a human before any developer time is spent. Optimize for that reader: clear interfaces, an explicit size statement, and (if applicable) the split proposal or "Why M, not split" justification.
-
 ## Workflow
 
 Your run has two phases: **size check** (cheap, always first) and **spec writing** (expensive, only if you're not splitting).

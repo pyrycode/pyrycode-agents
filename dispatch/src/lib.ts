@@ -31,23 +31,26 @@ export const AUTO_ADVANCE_RULES: AdvanceRule[] = [
 
 /**
  * Columns where the dispatcher does NOT auto-advance even when the
- * matching `ready:<agent>` label is present. A human reviews the work
- * in that column and moves the ticket forward manually via the project
- * board (same gesture as Inbox → Backlog promotion).
+ * matching `ready:<agent>` label is present — a human reviews the work
+ * and moves the ticket forward manually (same gesture as Inbox → Backlog).
  *
- * Today: "In Architecture" — the human reviews the architect's spec
- * and judges size before committing developer tokens. Cheaper to catch
- * an oversized or mis-designed spec here than to discover it mid-dev
- * run with the worktree already created and tokens spent.
+ * **Currently empty** (as of 2026-05-02). The architect → developer gate
+ * was added 2026-05-01 as a safety net for oversized specs, then removed
+ * once the size policy was enforced in code (architect either sizes ≤M
+ * with a "Why M, not split" justification, or splits via `needs-rework:po`
+ * — both produce a deterministic outcome that doesn't need human review).
+ * The gate was duplicating safeguards.
  *
- * Tickets sit in the gated column with `ready:<agent>` set; the gate
- * just suppresses the auto-advance step. `shouldSkipDispatch` already
- * prevents re-dispatch of an agent that has already added `ready:` for
- * itself, so the ticket is stable.
+ * The mechanism stays. Adding a future gate is a deliberate policy decision:
+ * append the column name here, update the corresponding test in lib.test.ts,
+ * and the gating behaviour in `decideAutoAdvance` activates automatically.
+ *
+ * Tickets in a gated column sit with `ready:<agent>` set; the gate
+ * just suppresses the auto-advance step. `shouldSkipDispatch` prevents
+ * re-dispatch of an agent that has already added `ready:` for itself,
+ * so the ticket is stable.
  */
-export const MANUAL_ADVANCE_GATES: ReadonlySet<string> = new Set([
-  "In Architecture",
-]);
+export const MANUAL_ADVANCE_GATES: ReadonlySet<string> = new Set<string>();
 
 /**
  * Columns considered "mid-pipeline" for the strict-WIP=1 rule. A ticket
