@@ -24,6 +24,26 @@ Your run has two phases: **size check** (cheap, always first) and **spec writing
 
 Read the ticket body, skim the relevant code surface (`cmd/pyry`, the affected packages), and sketch the design **mentally** — don't write it yet. Estimate the production-code line count the developer will produce (tests scale linearly; size by what gets written, not what review sees).
 
+**Edit fan-out check (refactor-shaped work).** Production-line count is a proxy for the developer's turn budget (~50 turns, each Edit ≈ 1 turn). It works for greenfield work but undercounts refactors where the developer edits many call sites in cascade. Before committing to a size, identify whether the work is refactor-shaped:
+
+- Renaming or changing the signature of an interface, type, or function
+- Replacing a widely-used type with a new one (test fixture cascades)
+- Cross-package coordination where many imports flip simultaneously
+
+If yes, count consumer call sites concretely from your worktree:
+
+```bash
+grep -rn <symbol> internal/ cmd/
+```
+
+Sizing rules with edit fan-out (use the larger bucket of line-count vs fan-out):
+
+- **≤ ~10 call sites** — size by line count as usual
+- **10–20 call sites** — bump up one bucket (S → M with a "Why M" justification noting the fan-out)
+- **> 20 call sites** — split. The Strangler Fig pattern (introduce new alongside old → migrate consumers → remove old) typically slices cleanly into 2–3 children, each with bounded edit cost.
+
+Pyrycode #29 (interface rename across 5 test files, ~35 net production lines, ~30+ Edit operations) sized at S by lines but hit the 50-turn budget. The call-site count was the binding constraint, not the line count.
+
 PO has already sized the ticket. You can override that size in either direction.
 
 **If you'll size at S (≤100 lines):** proceed to spec writing.
