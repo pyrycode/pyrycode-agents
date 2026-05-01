@@ -48,6 +48,21 @@ export function resolveAgentsRepoRoot(srcDir: string): string {
   return resolve(srcDir, "../..");
 }
 
+/**
+ * Resolve the pyrycode Go repo root from the agents repo root.
+ *
+ * `agents/` lives **inside** `pyrycode/` (gitignored there) rather than
+ * as a sibling, so the pyrycode root is just the parent of agents/.
+ *
+ * The original code had `agentsRepoRoot + "../pyrycode"`, which silently
+ * "worked" only because `agentsRepoRoot` was *also* buggy and pointed at
+ * the pyrycode root. Once that bug was fixed, this one surfaced — first
+ * dispatcher run after the fix tried `pyrycode/pyrycode/` and ENOENT'd.
+ */
+export function resolvePyrycodeRepoRoot(agentsRepoRoot: string): string {
+  return resolve(agentsRepoRoot, "..");
+}
+
 // --------- Label predicates ---------
 
 // The four label prefixes the dispatcher uses for per-agent state.

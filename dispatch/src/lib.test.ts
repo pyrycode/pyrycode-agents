@@ -21,6 +21,7 @@ import {
   AGENT_COLUMN_MAP,
   PIPELINE_LABEL_PREFIXES,
   resolveAgentsRepoRoot,
+  resolvePyrycodeRepoRoot,
   isPipelineLabel,
   shouldSkipDispatch,
   extractReworkTarget,
@@ -38,6 +39,26 @@ describe("resolveAgentsRepoRoot", () => {
   test("normalizes trailing slashes", () => {
     const got = resolveAgentsRepoRoot("/work/pyrycode/agents/dispatch/src/");
     assert.equal(got, "/work/pyrycode/agents");
+  });
+});
+
+describe("resolvePyrycodeRepoRoot", () => {
+  test("resolves to the parent of agents/ — the pyrycode Go repo", () => {
+    // agents/ lives INSIDE pyrycode/, so pyrycode root = parent of agents/.
+    // The original code had `agentsRepoRoot + "../pyrycode"`, which only
+    // "worked" when agentsRepoRoot was buggy and pointed at pyrycode/.
+    // Once that bug was fixed, this one surfaced — pyrycode/pyrycode/
+    // doesn't exist. Lock the corrected derivation in.
+    const got = resolvePyrycodeRepoRoot("/work/pyrycode/agents");
+    assert.equal(got, "/work/pyrycode");
+  });
+
+  test("composes correctly with resolveAgentsRepoRoot", () => {
+    // End-to-end: from a hypothetical src/ directory, the pair of
+    // resolvers should land back at the pyrycode root.
+    const agentsRoot = resolveAgentsRepoRoot("/work/pyrycode/agents/dispatch/src");
+    const pyrycodeRoot = resolvePyrycodeRepoRoot(agentsRoot);
+    assert.equal(pyrycodeRoot, "/work/pyrycode");
   });
 });
 

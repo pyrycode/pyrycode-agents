@@ -10,6 +10,7 @@ import {
   AUTO_ADVANCE_RULES,
   AGENT_COLUMN_MAP,
   resolveAgentsRepoRoot,
+  resolvePyrycodeRepoRoot,
   shouldSkipDispatch,
   isPipelineLabel,
   extractReworkTarget,
@@ -20,10 +21,10 @@ import {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const agentsRepoRoot = resolveAgentsRepoRoot(__dirname);
 
-// The main pyrycode/pyrycode repo — where code lives and agents work
+// The main pyrycode/pyrycode repo — where code lives and agents work.
 const repoRoot = process.env.PYRYCODE_REPO_PATH
   ? resolve(process.env.PYRYCODE_REPO_PATH)
-  : resolve(agentsRepoRoot, "../pyrycode");
+  : resolvePyrycodeRepoRoot(agentsRepoRoot);
 
 config({ path: resolve(agentsRepoRoot, ".env") });
 
