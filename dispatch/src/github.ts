@@ -24,13 +24,19 @@ async function fetchWithRetry(
 /**
  * GitHub Projects v2 client used by the dispatcher.
  *
- * **Known limit:** every items() query in this client uses `first: 100`,
- * which is a hard cap. If a single column ever exceeds 100 items
- * (or `getClosedItemsNotInDone` returns a project with 100+ closed
- * items), tickets beyond the page boundary go invisible to the
- * dispatcher. Pagination via `pageInfo.hasNextPage` + `endCursor` is
- * the standard fix when this becomes a real constraint. Today's
- * pyrycode project is well under the cap.
+ * **Item ordering:** every items() query orders by `POSITION` ascending
+ * — top of column first. This is the user's manual board ordering and
+ * doubles as the priority signal the dispatcher uses to pick which
+ * Backlog ticket to advance next. Drag a ticket up the column to
+ * prioritize it; drag down to defer.
+ *
+ * **Known limit:** every items() query uses `first: 100`, which is a
+ * hard cap. If a single column ever exceeds 100 items (or
+ * `getClosedItemsNotInDone` returns a project with 100+ closed items),
+ * tickets beyond the page boundary go invisible to the dispatcher.
+ * Pagination via `pageInfo.hasNextPage` + `endCursor` is the standard
+ * fix when this becomes a real constraint. Today's pyrycode project is
+ * well under the cap.
  */
 export class GitHubProjectClient {
   private gql: typeof graphql;
@@ -106,7 +112,7 @@ export class GitHubProjectClient {
       query($projectId: ID!) {
         node(id: $projectId) {
           ... on ProjectV2 {
-            items(first: 100) {
+            items(first: 100, orderBy: { field: POSITION, direction: ASC }) {
               nodes {
                 id
                 fieldValueByName(name: "Status") {
@@ -166,7 +172,7 @@ export class GitHubProjectClient {
       query($projectId: ID!) {
         node(id: $projectId) {
           ... on ProjectV2 {
-            items(first: 100) {
+            items(first: 100, orderBy: { field: POSITION, direction: ASC }) {
               nodes {
                 id
                 fieldValueByName(name: "Status") {

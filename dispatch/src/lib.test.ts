@@ -419,12 +419,16 @@ describe("decideAutoAdvance", () => {
     assert.deepEqual(d.backlogHeld, [29]);
   });
 
-  test("oldest issueNumber advances first regardless of input order", () => {
-    // GitHub's GraphQL `items(first: N)` does not document a stable order.
-    // The PO-split-with-sibling-dependency case (child B's architect needs
-    // child A's shipped code on main) requires deterministic "oldest first"
-    // selection. Insert #29 before #28 to prove the function sorts by
-    // issueNumber, not by insertion order.
+  test("Backlog advance picks the first eligible item from input order", () => {
+    // The pure function trusts the caller's input order. The caller
+    // (`runAutoAdvance`) queries GraphQL with `orderBy: { field: POSITION,
+    // direction: ASC }`, which returns items in board-position order
+    // (top of column first). Manual board reordering by humans is the
+    // priority signal — we respect it.
+    //
+    // Insert #29 ahead of #28 to prove the function takes input order
+    // verbatim, NOT issueNumber. The earlier "sort by issueNumber" rule
+    // (3abe7a3) was wrong: it ignored the user's manual board ordering.
     const d = decideAutoAdvance(
       AUTO_ADVANCE_RULES,
       MANUAL_ADVANCE_GATES,
@@ -435,13 +439,14 @@ describe("decideAutoAdvance", () => {
       false,
     );
     assert.equal(d.advances.length, 1);
-    assert.equal(d.advances[0].issueNumber, 28);
-    assert.deepEqual(d.backlogHeld, [29]);
+    assert.equal(d.advances[0].issueNumber, 29);
+    assert.deepEqual(d.backlogHeld, [28]);
   });
 
-  test("backlogHeld is also sorted (oldest-first reporting)", () => {
-    // For consistency with the advance order: when multiple items are
-    // held, list them oldest first so heartbeat output is stable.
+  test("backlogHeld preserves input order (board POSITION)", () => {
+    // When multiple items are held, the held list is in input order
+    // (which is board POSITION from the GraphQL query). Heartbeat output
+    // matches what the user sees on the project board top-to-bottom.
     const d = decideAutoAdvance(
       AUTO_ADVANCE_RULES,
       MANUAL_ADVANCE_GATES,
@@ -452,9 +457,10 @@ describe("decideAutoAdvance", () => {
       ]]),
       false,
     );
-    assert.equal(d.advances[0].issueNumber, 28);
-    // Held list: 30, 31 (in ascending order, NOT in input order [31, 30]).
-    assert.deepEqual(d.backlogHeld, [30, 31]);
+    // First eligible (input order) = #31; held = [#28, #30] in input order
+    // (NOT [28, 30, 31] sorted, NOT [31, 30, 28] reversed).
+    assert.equal(d.advances[0].issueNumber, 31);
+    assert.deepEqual(d.backlogHeld, [28, 30]);
   });
 
   test("ready:po in Backlog while pipeline already in flight → all held, no advance", () => {

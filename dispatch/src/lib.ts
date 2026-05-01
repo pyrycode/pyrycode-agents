@@ -183,21 +183,24 @@ export function decideAutoAdvance(
     }
 
     if (rule.from === "Backlog") {
-      // Sort by issueNumber ascending — oldest tickets advance first.
-      // GitHub's GraphQL `items(first: N)` does not document a stable
-      // order, so explicit sort is required for the PO-split-with-
-      // sibling-dependency case: child B's architect run needs to read
-      // child A's actual shipped code on main, which only works if A
-      // (lower issueNumber) advances before B.
-      const sorted = [...eligible].sort((a, b) => a.issueNumber - b.issueNumber);
+      // Trust the caller's input order. `runAutoAdvance` queries GraphQL
+      // with `orderBy: { field: POSITION, direction: ASC }`, returning
+      // items in board-position order (top of column first). That's the
+      // user's manual prioritization signal — we respect it directly.
+      //
+      // Earlier this file sorted by issueNumber (3abe7a3); that was
+      // wrong. issueNumber is creation order, not priority order. With
+      // POSITION ordering at the GraphQL boundary, the human can drag
+      // tickets up/down the column to set priority and the dispatcher
+      // follows.
       if (cycleInFlight) {
         // Already in flight — hold every eligible Backlog item.
-        backlogHeld.push(...sorted.map(i => i.issueNumber));
+        backlogHeld.push(...eligible.map(i => i.issueNumber));
         continue;
       }
-      if (sorted.length === 0) continue;
-      // Advance the oldest; hold the rest within this cycle.
-      const head = sorted[0];
+      if (eligible.length === 0) continue;
+      // Advance the first (top of column); hold the rest in input order.
+      const head = eligible[0];
       advances.push({
         itemId: head.id,
         issueNumber: head.issueNumber,
@@ -205,8 +208,8 @@ export function decideAutoAdvance(
         toColumn: rule.to,
       });
       cycleInFlight = true;
-      if (sorted.length > 1) {
-        backlogHeld.push(...sorted.slice(1).map(i => i.issueNumber));
+      if (eligible.length > 1) {
+        backlogHeld.push(...eligible.slice(1).map(i => i.issueNumber));
       }
       continue;
     }
