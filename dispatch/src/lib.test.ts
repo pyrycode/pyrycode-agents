@@ -22,6 +22,7 @@ import { AGENTS } from "./types.js";
 import {
   AUTO_ADVANCE_RULES,
   AGENT_COLUMN_MAP,
+  MANUAL_ADVANCE_GATES,
   PIPELINE_LABEL_PREFIXES,
   resolveAgentsRepoRoot,
   resolvePyrycodeRepoRoot,
@@ -214,6 +215,37 @@ describe("AUTO_ADVANCE_RULES", () => {
 
   test("five rules — one per agent (no missing or extra stages)", () => {
     assert.equal(AUTO_ADVANCE_RULES.length, AGENTS.length);
+  });
+});
+
+describe("MANUAL_ADVANCE_GATES", () => {
+  test("every gated column is a known `from` in AUTO_ADVANCE_RULES", () => {
+    // A gate on a column that doesn't appear in AUTO_ADVANCE_RULES is
+    // dead config — the auto-advance loop never iterates over it, so
+    // the gate has no effect. Catch that drift here.
+    const knownFromColumns = new Set(AUTO_ADVANCE_RULES.map(r => r.from));
+    for (const gated of MANUAL_ADVANCE_GATES) {
+      assert.ok(
+        knownFromColumns.has(gated),
+        `MANUAL_ADVANCE_GATES references "${gated}" but no AUTO_ADVANCE_RULES rule has that as a "from" column`,
+      );
+    }
+  });
+
+  test("In Architecture is gated (architect → developer requires human review)", () => {
+    // Locks in the policy decided 2026-05-01 late: the architect's spec
+    // and proposed size must be human-reviewed before committing
+    // developer tokens. Removing this entry should be a deliberate
+    // policy change, not an accident.
+    assert.ok(
+      MANUAL_ADVANCE_GATES.has("In Architecture"),
+      "In Architecture must be in MANUAL_ADVANCE_GATES — architect-to-dev needs human review",
+    );
+  });
+
+  test("Done is not gated (terminal column needs no further advance)", () => {
+    // Done is the last column; gating it does nothing useful. Sanity check.
+    assert.ok(!MANUAL_ADVANCE_GATES.has("Done"));
   });
 });
 

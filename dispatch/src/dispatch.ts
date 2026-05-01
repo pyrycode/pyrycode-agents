@@ -9,6 +9,7 @@ import { AGENTS, type AgentConfig, type ProjectItem } from "./types.js";
 import {
   AUTO_ADVANCE_RULES,
   AGENT_COLUMN_MAP,
+  MANUAL_ADVANCE_GATES,
   resolveAgentsRepoRoot,
   resolvePyrycodeRepoRoot,
   shouldSkipDispatch,
@@ -664,6 +665,28 @@ async function dispatchToAgent(
 
 async function runAutoAdvance(client: GitHubProjectClient): Promise<void> {
   for (const rule of AUTO_ADVANCE_RULES) {
+    // Human-gated columns are the same gesture as Inbox → Backlog: a
+    // human reviews the work and moves the ticket forward manually.
+    // Skip auto-advance for those — the agent has already labelled
+    // ready:<self> on success, so the ticket sits stably until moved.
+    if (MANUAL_ADVANCE_GATES.has(rule.from)) {
+      try {
+        const gated = await client.getItemsByStatus(rule.from);
+        const awaiting = gated.filter(
+          item =>
+            item.issueNumber > 0 &&
+            item.labels.includes(rule.readyLabel) &&
+            !item.labels.some(l => l.startsWith("needs-rework:") || l.startsWith("error:")),
+        );
+        if (awaiting.length > 0) {
+          const numbers = awaiting.map(i => `#${i.issueNumber}`).join(", ");
+          console.log(`   🚦 ${rule.from}: ${numbers} awaiting human review (move to ${rule.to} when ready)`);
+        }
+      } catch (error: any) {
+        console.error(`Error polling gated column ${rule.from}: ${error.message}`);
+      }
+      continue;
+    }
     try {
       const items = await client.getItemsByStatus(rule.from);
       for (const item of items) {

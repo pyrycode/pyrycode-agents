@@ -29,6 +29,26 @@ export const AUTO_ADVANCE_RULES: AdvanceRule[] = [
   { from: "In Documentation",   readyLabel: "ready:documentation",  to: "Done" },
 ];
 
+/**
+ * Columns where the dispatcher does NOT auto-advance even when the
+ * matching `ready:<agent>` label is present. A human reviews the work
+ * in that column and moves the ticket forward manually via the project
+ * board (same gesture as Inbox → Backlog promotion).
+ *
+ * Today: "In Architecture" — the human reviews the architect's spec
+ * and judges size before committing developer tokens. Cheaper to catch
+ * an oversized or mis-designed spec here than to discover it mid-dev
+ * run with the worktree already created and tokens spent.
+ *
+ * Tickets sit in the gated column with `ready:<agent>` set; the gate
+ * just suppresses the auto-advance step. `shouldSkipDispatch` already
+ * prevents re-dispatch of an agent that has already added `ready:` for
+ * itself, so the ticket is stable.
+ */
+export const MANUAL_ADVANCE_GATES: ReadonlySet<string> = new Set([
+  "In Architecture",
+]);
+
 // Built from AGENTS — single source of truth for the name → column mapping.
 export const AGENT_COLUMN_MAP: ReadonlyMap<string, string> = new Map(
   AGENTS.map((a: AgentConfig) => [a.name, a.column]),
