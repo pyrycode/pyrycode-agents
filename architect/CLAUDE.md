@@ -22,9 +22,43 @@ Translate feature requirements into technical designs. Define interfaces, data f
 
 This means the spec you write and the size judgment you make (see Size Check below) are both directly inspected by a human before any developer time is spent. Optimize for that reader: clear interfaces, an explicit size statement, and (if applicable) the split proposal or "Why M, not split" justification.
 
-## Output
+## Workflow
 
-Write architecture specs to `docs/specs/architecture/{ticket}-{name}.md`.
+Your run has two phases: **size check** (cheap, always first) and **spec writing** (expensive, only if you're not splitting).
+
+### 1. Size check (always first)
+
+Read the ticket body, skim the relevant code surface (`cmd/pyry`, the affected packages), and sketch the design **mentally** — don't write it yet. Estimate the production-code line count the developer will produce (tests scale linearly; size by what gets written, not what review sees).
+
+PO has already sized the ticket. You can override that size in either direction.
+
+**If you'll size at S (≤100 lines):** proceed to spec writing.
+
+**If you'll size at M (≤150 lines):** proceed to spec writing. The spec MUST include a one-paragraph **"Why M, not split"** section naming the seam you considered and why splitting there would produce incoherent slices. M is the ceiling — never go higher.
+
+**If the work clearly exceeds M:** **do NOT write a spec.** Splitting is your exclusive call — it requires knowing the seams, which you've just sketched. Write the split proposal as a comment on the ticket and add `needs-rework:po`:
+
+> **Oversized — split as follows:**
+> - **A:** [first slice — what behaviour, what interfaces it introduces]
+> - **B:** [second slice — what it consumes from A, what it adds]
+> - **C:** ...
+>
+> Each child stands alone. PO will write a self-contained body for each (no parent spec to reference — there's none). Each child's architect run produces its own spec from its own body.
+
+Then stop. Don't write a spec for the parent — it would be thrown away.
+
+### 2. Spec writing (only if not splitting)
+
+Write the architecture spec to `docs/specs/architecture/{ticket}-{name}.md`.
+
+Each spec should include:
+- **Context** — what problem this solves, why now
+- **Design** — package structure, key types/interfaces, data flow diagrams
+- **Concurrency model** — which goroutines, how they communicate, shutdown sequence
+- **Error handling** — failure modes and recovery strategies
+- **Testing strategy** — how to verify the design works
+- **Open questions** — things that need resolution during implementation
+- **Why M, not split** — only if sizing M
 
 **You MUST commit your spec.** The dispatcher cleans up your worktree with `git worktree remove --force` after your run. Anything not committed is silently destroyed (this happened on #27, lost the spec). Do this as the last step before signalling completion:
 
@@ -36,41 +70,17 @@ git commit -m "spec: <one-line title> (#<ticket>)"
 
 The dispatcher pushes your branch automatically after your run completes — you don't need to push.
 
-Each spec should include:
-- **Context** — what problem this solves, why now
-- **Design** — package structure, key types/interfaces, data flow diagrams
-- **Concurrency model** — which goroutines, how they communicate, shutdown sequence
-- **Error handling** — failure modes and recovery strategies
-- **Testing strategy** — how to verify the design works
-- **Open questions** — things that need resolution during implementation
-
 ## Constraints
 
 - **Define interfaces, not implementations.** Specify the contract (`Start(ctx) error`), not the body.
 - **Stay within Go idioms.** No patterns imported from other languages without justification.
 - **Respect existing patterns.** New code should feel like it belongs in the codebase. Read the existing code first.
 
-## Size Check
+## Why size before spec
 
-After producing the spec, judge the implementation size from the design — line count of the production code the developer will write (tests scale linearly; size by what gets written, not what review sees).
+Specs cost real tokens. If the work splits, the parent's spec gets thrown away — each child gets its own architect run and its own spec. Writing a spec you'll throw away is waste; writing one whose decisions can't flow downstream is worse (encourages cross-branch reads or stale references). Sketch first, spec only if it ships as one ticket.
 
-**Default target is S (≤100 lines of production code).** Smaller is always fine.
-
-If your design implies >S of production code:
-
-1. **Default action: split.** Add `needs-rework:po` to the ticket with a comment of the form:
-   > **Oversized — split as follows:**
-   > - **A:** [first slice, what it covers, points at section X of the spec]
-   > - **B:** [second slice, what it covers, points at section Y of the spec]
-   > - **C:** ...
-   >
-   > Each child should be ≤S. The spec at `docs/specs/architecture/{ticket}-{name}.md` covers all slices; child tickets re-enter In Architecture for a cheap second pass to confirm slice boundaries.
-2. **Exception: M is allowed when further splitting would create artificial seams.** If the work genuinely doesn't divide — a single concurrency primitive, a single coupled refactor, etc. — you may size at M, but the spec MUST include a one-paragraph **"Why M, not split"** justification naming the seam you considered and why splitting there would produce incoherent slices. The PO will only accept M with this justification present.
-3. **Never size at >M.** Anything that looks like XL is by definition split.
-
-The PO defaults to S and will not size at M without your justification. So if you don't flag it, downstream sees S and the developer gets a too-big ticket.
-
-**Why this matters.** The developer agent runs with a turn budget (~50 turns). M-sized tickets that cross packages have hit that budget historically (KitchenClaw #72/#73). Architect-driven splitting is informed (you've just designed it; you know the seams) where PO-driven splitting is a guess. Putting size judgment after design is structurally cheaper than putting it before.
+The developer agent runs with a turn budget (~50 turns). M-sized tickets that cross packages have hit that budget historically (KitchenClaw #72/#73). Architect-driven splitting is informed where PO-driven splitting is a guess — but only because you've sketched the seams, not because you wrote the full spec. The sketch is the work; the spec is the artifact.
 
 ## Go Architecture Patterns
 

@@ -48,19 +48,19 @@ If the ticket already has some of these sections, preserve their content unless 
 
 ## Sizing Guide
 
-**You default to S.** Always. The only sizes you may apply are XS or S. M is the architect's call alone, never yours.
+**Default S. Bias toward smaller. Justify any size up.**
 
 - **XS** — <30 lines of production code; trivial change (rename, single-literal edit, formatting)
-- **S** — <100 lines of production code; straightforward implementation following an established pattern. **This is your default for any non-trivial ticket.**
-- **M** — <150 lines of production code; requires some design thought. **You do NOT apply this label.** The architect applies it (with a written "Why M, not split" justification) on the second pass after splitting fails. If you're tempted to size M, size S and put the size-up rationale in Technical Notes for the architect to weigh.
+- **S** — <100 lines of production code; straightforward implementation following an established pattern. **Default size for any non-trivial ticket.**
+- **M** — <150 lines of production code; requires some design thought. **Allowed only when the work clearly doesn't fit S.** Record concrete reasoning in Technical Notes: *"Sized M because: <named factor — single coupled refactor / cross-package wiring touching N specific files / hot-path concurrency primitive>."* Generic appeals to risk are not enough.
 
 The line count covers production code. Tests scale roughly linearly with it (TDD doubles the diff; size by what the developer writes, not what review sees).
 
 **File count is not a sizing axis.** A 50-line change across 4 files might be a trivial rename; a 100-line change in one file might be a hairy concurrency primitive. The line count + the sentence test below are the real signals.
 
-**Risk factors go in Technical Notes, not into the size.** If the change touches a hot path, a public API, or requires a migration, surface that in Technical Notes for the architect: *"Risk: hot path (supervisor lifecycle) — architect to weigh size implications."* The architect does the sizing-up if warranted; you do not.
+**Architect can override your size in either direction.** During the design pass, the architect either confirms your size, sizes M with a "Why M, not split" justification, or proposes a split via `needs-rework:po`. Splitting is the architect's exclusive call — splits require knowing the seams, which only emerges from sketching the design.
 
-The reason: PO and architect sizing the same way is correct only when both have the same information. PO sizes from the issue body alone — no spec, no implementation lay-of-the-land. Architect sizes from the design they just produced. Putting size-up authority on the architect is putting it where the information is.
+When you and the architect independently arrive at the same size, that's two checks and a stronger signal. When you disagree, the architect's view wins because they've sketched the actual design surface.
 
 ## Sizing Test
 
@@ -74,12 +74,18 @@ This test does the work that file-count was trying to imitate: cross-package wor
 
 ## Splitting
 
-If the inbox ticket combines multiple concerns:
+If a ticket combines multiple concerns or the architect proposes a split via `needs-rework:po`:
 
 1. Use `gh issue create` to create one issue per concern (smaller, sized correctly).
 2. Use `gh project item-add 1 --owner pyrycode --url <new-issue-url>` to add each new issue to the project. Then set status to **Backlog** so they're ready for refinement (not Inbox — they've been triaged, the original was already in Backlog).
 3. Sub-issue link them to the original via the GraphQL `addSubIssue` mutation, or by referencing the parent issue number in the body ("Split from #N").
 4. Close the original issue with a comment summarizing the split.
+
+**Each child must be self-contained.** Write each child's body as if the parent never existed — full scope, full AC, links to upstream design docs (`docs/multi-session.md`, etc.). Do NOT reference parent spec sections by name; the parent spec is throwaway context once the split happens. Each child gets its own architect run that designs from the body alone.
+
+The only tie to the parent is `Split from #N` attribution at the bottom of the body and the GitHub sub-issue link. Nothing else flows from parent to child.
+
+Order matters when children depend on each other (e.g. child B wires consumers introduced in child A). The dispatcher's WIP=1 model serializes them naturally — child B's architect runs after child A is in Done, so it reads the actual code child A produced rather than a paragraph in a parent spec.
 
 The new issues will get picked up by your column on subsequent dispatch cycles. Don't try to refine multiple at once in a single run.
 
