@@ -417,6 +417,44 @@ describe("decideAutoAdvance", () => {
     assert.deepEqual(d.backlogHeld, [29]);
   });
 
+  test("oldest issueNumber advances first regardless of input order", () => {
+    // GitHub's GraphQL `items(first: N)` does not document a stable order.
+    // The PO-split-with-sibling-dependency case (child B's architect needs
+    // child A's shipped code on main) requires deterministic "oldest first"
+    // selection. Insert #29 before #28 to prove the function sorts by
+    // issueNumber, not by insertion order.
+    const d = decideAutoAdvance(
+      AUTO_ADVANCE_RULES,
+      MANUAL_ADVANCE_GATES,
+      items(["Backlog", [
+        { id: "i2", issueNumber: 29, labels: ["ready:po"] },
+        { id: "i1", issueNumber: 28, labels: ["ready:po"] },
+      ]]),
+      false,
+    );
+    assert.equal(d.advances.length, 1);
+    assert.equal(d.advances[0].issueNumber, 28);
+    assert.deepEqual(d.backlogHeld, [29]);
+  });
+
+  test("backlogHeld is also sorted (oldest-first reporting)", () => {
+    // For consistency with the advance order: when multiple items are
+    // held, list them oldest first so heartbeat output is stable.
+    const d = decideAutoAdvance(
+      AUTO_ADVANCE_RULES,
+      MANUAL_ADVANCE_GATES,
+      items(["Backlog", [
+        { id: "i3", issueNumber: 31, labels: ["ready:po"] },
+        { id: "i1", issueNumber: 28, labels: ["ready:po"] },
+        { id: "i2", issueNumber: 30, labels: ["ready:po"] },
+      ]]),
+      false,
+    );
+    assert.equal(d.advances[0].issueNumber, 28);
+    // Held list: 30, 31 (in ascending order, NOT in input order [31, 30]).
+    assert.deepEqual(d.backlogHeld, [30, 31]);
+  });
+
   test("ready:po in Backlog while pipeline already in flight → all held, no advance", () => {
     const d = decideAutoAdvance(
       AUTO_ADVANCE_RULES,
