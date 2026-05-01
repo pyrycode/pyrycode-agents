@@ -34,6 +34,7 @@ import {
   decideAutoAdvance,
   decideReworkRoutes,
   shouldAutoCommit,
+  shouldUseWorktree,
   findAdvanceRule,
 } from "./lib.js";
 
@@ -631,6 +632,49 @@ describe("decideReworkRoutes", () => {
     assert.equal(r.length, 1);
     assert.equal(r[0].triggerLabel, "needs-rework:developer");
     assert.equal(r[0].toColumn, "In Development");
+  });
+});
+
+describe("shouldUseWorktree", () => {
+  test("PO does not use a worktree (operates on issue body via gh)", () => {
+    const po = AGENTS.find(a => a.name === "po")!;
+    assert.equal(shouldUseWorktree(po), false);
+  });
+
+  test("architect uses a worktree (writes spec to docs/specs/architecture/)", () => {
+    const arch = AGENTS.find(a => a.name === "architect")!;
+    assert.equal(shouldUseWorktree(arch), true);
+  });
+
+  test("developer uses a worktree (writes code + tests)", () => {
+    const dev = AGENTS.find(a => a.name === "developer")!;
+    assert.equal(shouldUseWorktree(dev), true);
+  });
+
+  test("code-review uses a worktree (reads code locally to review)", () => {
+    const cr = AGENTS.find(a => a.name === "code-review")!;
+    assert.equal(shouldUseWorktree(cr), true);
+  });
+
+  test("documentation uses a worktree (writes to docs/)", () => {
+    const docs = AGENTS.find(a => a.name === "documentation")!;
+    assert.equal(shouldUseWorktree(docs), true);
+  });
+
+  test("every AgentConfig declares usesWorktree explicitly", () => {
+    // Adding a new agent must force an explicit decision about whether
+    // it operates on the working tree. No implicit defaults — the policy
+    // is declarative on the agent record. This locks in the rule that
+    // bit us on #27 (PO's hardcoded `if (agent.name === "po")` was the
+    // only place the policy lived; missing it for a new agent would
+    // silently default to "uses worktree" with cosmetic push failures).
+    for (const agent of AGENTS) {
+      assert.equal(
+        typeof agent.usesWorktree,
+        "boolean",
+        `${agent.name} must declare usesWorktree`,
+      );
+    }
   });
 });
 

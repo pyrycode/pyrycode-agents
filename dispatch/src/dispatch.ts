@@ -19,6 +19,7 @@ import {
   decideAutoAdvance,
   decideReworkRoutes,
   shouldAutoCommit,
+  shouldUseWorktree,
 } from "./lib.js";
 
 // Load .env from agents repo root (where dispatch lives).
@@ -349,7 +350,7 @@ async function dispatchToAgent(
   // when switching back to main. All feature branch work happens in the worktree.
   const worktreeDir = resolve(repoRoot, `../.pyrycode-worktrees/${agent.name}-${item.issueNumber}`);
   // PO never needs a worktree — it uses gh CLI, no code changes
-  const useWorktree = item.issueNumber > 0 && agent.name !== "po";
+  const useWorktree = item.issueNumber > 0 && shouldUseWorktree(agent);
   const agentCwd = useWorktree ? worktreeDir : repoRoot;
 
   // PO and issue-0 (manual dispatch) run on main — just pull latest
@@ -577,8 +578,11 @@ async function dispatchToAgent(
       }
     }
 
-    // Push the feature branch from the worktree
-    if (item.issueNumber > 0) {
+    // Push the feature branch from the worktree. Only agents that use a
+    // worktree produce commits worth pushing; gating on useWorktree avoids
+    // the cosmetic "src refspec doesn't match any" failure for PO runs
+    // (PO doesn't write code, has no worktree, has no branch to push).
+    if (item.issueNumber > 0 && useWorktree) {
       try {
         execSync(`git push -u origin ${branchName}`, { cwd: agentCwd, stdio: "pipe" });
         console.log(`   📤 Pushed ${branchName} to origin`);

@@ -293,6 +293,27 @@ export function decideReworkRoutes(
   return routes;
 }
 
+// --------- Per-agent dispatch policy ---------
+
+/**
+ * True if the dispatcher should set up a git worktree for this agent and
+ * push the resulting feature branch after the run. False for agents that
+ * only modify external state (issues, PRs, project board) — currently
+ * just PO.
+ *
+ * Reads `agent.usesWorktree` (declared in types.ts). The predicate exists
+ * so callers grep for the policy by name and so future logic (e.g.
+ * conditional behaviour by ticket type) has one place to live.
+ *
+ * Caught the cosmetic "feature/27 push failed: src refspec doesn't
+ * match any" bug surfaced on #27: PO's run had no commits, so the
+ * dispatcher's unconditional `git push` failed. Gating the push on this
+ * predicate removes the spurious failure.
+ */
+export function shouldUseWorktree(agent: AgentConfig): boolean {
+  return agent.usesWorktree;
+}
+
 // --------- Auto-commit safety net ---------
 
 /**
