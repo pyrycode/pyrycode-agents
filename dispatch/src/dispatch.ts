@@ -7,9 +7,10 @@ import { config } from "dotenv";
 import { GitHubProjectClient } from "./github.js";
 import { AGENTS, type AgentConfig, type ProjectItem } from "./types.js";
 
-// Load .env from agents repo root (where dispatch lives)
+// Load .env from agents repo root (where dispatch lives).
+// __dirname is agents/dispatch/src, so ../.. is agents/ root.
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const agentsRepoRoot = resolve(__dirname, "../../..");
+const agentsRepoRoot = resolve(__dirname, "../..");
 
 // The main pyrycode/pyrycode repo — where code lives and agents work
 const repoRoot = process.env.PYRYCODE_REPO_PATH
