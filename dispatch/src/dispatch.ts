@@ -16,6 +16,7 @@ import {
   shouldSkipDispatch,
   isPipelineLabel,
   extractReworkTarget,
+  isPipelineInFlight,
 } from "./lib.js";
 
 // Load .env from agents repo root (where dispatch lives).
@@ -724,11 +725,7 @@ async function runAutoAdvance(client: GitHubProjectClient): Promise<void> {
     const midItems = await Promise.all(
       MID_PIPELINE_COLUMNS.map(c => client.getItemsByStatus(c)),
     );
-    inFlight = midItems.flat().some(
-      item =>
-        item.issueNumber > 0 &&
-        !item.labels.some(l => l.startsWith("error:")),
-    );
+    inFlight = isPipelineInFlight(midItems.flat());
   } catch (error: any) {
     // If the in-flight probe fails, default to NOT holding (existing
     // pre-WIP=1 behaviour). Better to over-advance than to deadlock the

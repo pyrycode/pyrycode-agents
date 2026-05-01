@@ -74,6 +74,34 @@ export const MID_PIPELINE_COLUMNS: readonly string[] = [
   "In Documentation",
 ];
 
+/**
+ * True if any of the given mid-pipeline items is "in flight" — i.e. should
+ * count toward the WIP=1 cap and hold new tickets in Backlog.
+ *
+ * Counts:
+ *   - tickets actively running, awaiting human gate, or transiently in rework
+ *   - tickets with no labels (just-arrived in column, awaiting dispatch)
+ *
+ * Excludes:
+ *   - non-issue items (issueNumber <= 0, e.g. epics or draft project items)
+ *   - tickets carrying any `error:*` label — those are stuck on exceptional
+ *     human action and shouldn't block unrelated work. Adding `error:*` is
+ *     also the escape hatch for parking a normal-path ticket (e.g. a long
+ *     human-gate hold where you want unrelated tickets to flow).
+ *
+ * Pure function over the items the caller already collected from
+ * MID_PIPELINE_COLUMNS — no I/O, no side effects, easy to unit-test.
+ */
+export function isPipelineInFlight(
+  items: { issueNumber: number; labels: string[] }[],
+): boolean {
+  return items.some(
+    item =>
+      item.issueNumber > 0 &&
+      !item.labels.some(l => l.startsWith("error:")),
+  );
+}
+
 // Built from AGENTS — single source of truth for the name → column mapping.
 export const AGENT_COLUMN_MAP: ReadonlyMap<string, string> = new Map(
   AGENTS.map((a: AgentConfig) => [a.name, a.column]),

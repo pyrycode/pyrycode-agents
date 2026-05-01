@@ -30,6 +30,7 @@ import {
   isPipelineLabel,
   shouldSkipDispatch,
   extractReworkTarget,
+  isPipelineInFlight,
   findAdvanceRule,
 } from "./lib.js";
 
@@ -284,6 +285,85 @@ describe("MID_PIPELINE_COLUMNS", () => {
         `${name}'s column "${col}" should be in MID_PIPELINE_COLUMNS`,
       );
     }
+  });
+});
+
+describe("isPipelineInFlight", () => {
+  test("empty input → not in flight", () => {
+    // Pristine pipeline. Backlog should be free to advance.
+    assert.equal(isPipelineInFlight([]), false);
+  });
+
+  test("any non-errored ticket counts as in flight", () => {
+    // The most common case: a ticket actively progressing.
+    assert.equal(
+      isPipelineInFlight([{ issueNumber: 28, labels: ["size:s", "ready:architect"] }]),
+      true,
+    );
+  });
+
+  test("ticket with no labels still counts (just-arrived in column)", () => {
+    // A ticket that just got promoted to a mid-pipeline column may have
+    // had its agent labels stripped by the dispatch loop. It's still in
+    // flight — about to be dispatched on.
+    assert.equal(isPipelineInFlight([{ issueNumber: 42, labels: [] }]), true);
+  });
+
+  test("error-labelled ticket does NOT count", () => {
+    // Errored tickets are stuck on exceptional human action. Unrelated
+    // work shouldn't be blocked behind them.
+    assert.equal(
+      isPipelineInFlight([{ issueNumber: 99, labels: ["error:developer"] }]),
+      false,
+    );
+  });
+
+  test("any error: prefix excludes (not just specific agents)", () => {
+    // Confirms the prefix-match approach. error:parked, error:human-blocked,
+    // and any future variant should all park the ticket.
+    for (const variant of ["error:po", "error:parked", "error:human-blocked"]) {
+      assert.equal(
+        isPipelineInFlight([{ issueNumber: 99, labels: [variant] }]),
+        false,
+        `${variant} should exclude from in-flight`,
+      );
+    }
+  });
+
+  test("mixed: errored + non-errored → in flight", () => {
+    // If even one non-errored ticket is mid-pipeline, hold Backlog.
+    // The errored one is parked; the other one is real work.
+    assert.equal(
+      isPipelineInFlight([
+        { issueNumber: 99, labels: ["error:developer"] },
+        { issueNumber: 28, labels: ["ready:architect"] },
+      ]),
+      true,
+    );
+  });
+
+  test("non-issue items (issueNumber <= 0) are ignored", () => {
+    // Project items without an issue (drafts, epics) shouldn't trigger
+    // the WIP gate. Locks the issueNumber > 0 guard.
+    assert.equal(
+      isPipelineInFlight([{ issueNumber: 0, labels: [] }]),
+      false,
+    );
+    assert.equal(
+      isPipelineInFlight([{ issueNumber: -1, labels: ["ready:po"] }]),
+      false,
+    );
+  });
+
+  test("all errored → not in flight", () => {
+    // Pipeline full of stuck tickets. New work should be allowed in.
+    assert.equal(
+      isPipelineInFlight([
+        { issueNumber: 99, labels: ["error:developer"] },
+        { issueNumber: 100, labels: ["error:parked"] },
+      ]),
+      false,
+    );
   });
 });
 
