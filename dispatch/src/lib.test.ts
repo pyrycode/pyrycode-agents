@@ -36,6 +36,7 @@ import {
   shouldAutoCommit,
   shouldUseWorktree,
   hasOpenBlockers,
+  shouldSkipBlockedFor,
   findAdvanceRule,
 } from "./lib.js";
 
@@ -376,7 +377,7 @@ describe("isPipelineInFlight", () => {
 
 describe("decideAutoAdvance", () => {
   // Helper to build the itemsByColumn map ergonomically.
-  type Item = { id: string; issueNumber: number; labels: string[] };
+  type Item = { id: string; issueNumber: number; labels: string[]; blockedBy?: { number: number; state: "OPEN" | "CLOSED" }[] };
   const items = (...rows: [string, Item[]][]): Map<string, Item[]> => new Map(rows);
 
   test("empty pipeline → no advances, no holds, no gates", () => {
@@ -554,6 +555,43 @@ describe("decideAutoAdvance", () => {
     assert.equal(devAdvance!.toColumn, "In Code Review");
   });
 
+  test("blocked Backlog item does not auto-advance (stays in Backlog until unblocked)", () => {
+    // A blocked ticket can be PO-refined (ready:po set) but should not
+    // auto-advance to In Architecture while blockers are open. Keeps
+    // the board state honest: blocked tickets stay in the queue, not
+    // the architect's column.
+    const d = decideAutoAdvance(
+      AUTO_ADVANCE_RULES,
+      MANUAL_ADVANCE_GATES,
+      items(["Backlog", [{
+        id: "i1",
+        issueNumber: 45,
+        labels: ["ready:po", "size:s"],
+        blockedBy: [{ number: 40, state: "OPEN" }],
+      }]]),
+      false,
+    );
+    assert.deepEqual(d.advances, []);
+  });
+
+  test("CLOSED-only blockers don't prevent advance (dependencies satisfied)", () => {
+    // Once the blocker closes, the ticket is free to advance. Locks
+    // the "any-OPEN-blocker holds" semantic.
+    const d = decideAutoAdvance(
+      AUTO_ADVANCE_RULES,
+      MANUAL_ADVANCE_GATES,
+      items(["Backlog", [{
+        id: "i1",
+        issueNumber: 45,
+        labels: ["ready:po", "size:s"],
+        blockedBy: [{ number: 40, state: "CLOSED" }],
+      }]]),
+      false,
+    );
+    assert.equal(d.advances.length, 1);
+    assert.equal(d.advances[0].issueNumber, 45);
+  });
+
   test("multiple mid-pipeline advances in one decision", () => {
     // Unusual but possible: dev finishes ticket X, code-review finishes ticket Y,
     // both ready in same cycle. Both should advance.
@@ -573,7 +611,7 @@ describe("decideAutoAdvance", () => {
 });
 
 describe("decideReworkRoutes", () => {
-  type Item = { id: string; issueNumber: number; labels: string[] };
+  type Item = { id: string; issueNumber: number; labels: string[]; blockedBy?: { number: number; state: "OPEN" | "CLOSED" }[] };
   const items = (...rows: [string, Item[]][]): Map<string, Item[]> => new Map(rows);
 
   test("empty pipeline → no routes", () => {
@@ -686,6 +724,46 @@ describe("decideReworkRoutes", () => {
     assert.equal(r.length, 1);
     assert.equal(r[0].triggerLabel, "needs-rework:developer");
     assert.equal(r[0].toColumn, "In Development");
+  });
+});
+
+describe("shouldSkipBlockedFor", () => {
+  test("PO is allowed on blocked tickets — refinement is cheap prep work", () => {
+    // PO refines the body shape (user story, AC, size). It doesn't
+    // depend on the blocker's implementation. Allowing PO to refine
+    // in advance means the ticket is ready to flow the moment the
+    // blocker resolves — no PO delay added on top of blocker wait.
+    assert.equal(
+      shouldSkipBlockedFor("po", [{ number: 40, state: "OPEN" }]),
+      false,
+    );
+  });
+
+  test("non-PO agents skip blocked tickets — they need the blocker's API", () => {
+    // Architect designs against the actual code. Developer implements
+    // against types that must exist on main. Code-review reads the PR
+    // diff. Documentation reads the merged feature. None can do their
+    // job until the blocker lands.
+    for (const agent of ["architect", "developer", "code-review", "documentation"]) {
+      assert.equal(
+        shouldSkipBlockedFor(agent, [{ number: 40, state: "OPEN" }]),
+        true,
+        `${agent} should skip blocked tickets`,
+      );
+    }
+  });
+
+  test("any agent + no blockers → not skipped", () => {
+    for (const agent of ["po", "architect", "developer", "code-review", "documentation"]) {
+      assert.equal(shouldSkipBlockedFor(agent, []), false);
+    }
+  });
+
+  test("non-PO agent + all-CLOSED blockers → not skipped (dependencies satisfied)", () => {
+    assert.equal(
+      shouldSkipBlockedFor("architect", [{ number: 40, state: "CLOSED" }]),
+      false,
+    );
   });
 });
 

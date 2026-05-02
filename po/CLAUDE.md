@@ -94,7 +94,16 @@ If a ticket combines multiple concerns, the architect proposes a split via `need
 1. Use `gh issue create` to create one issue per concern (smaller, sized correctly).
 2. Use `gh project item-add 1 --owner pyrycode --url <new-issue-url>` to add each new issue to the project. Then set status to **Backlog** so they're ready for refinement (not Inbox — they've been triaged, the original was already in Backlog).
 3. Sub-issue link them to the original via the GraphQL `addSubIssue` mutation, or by referencing the parent issue number in the body ("Split from #N").
-4. Move the parent's project status to **Done**, then close the original issue with a comment summarizing the split. (The dispatcher's closed-sweep will catch you if you forget the status move, but doing it explicitly keeps the board clean immediately.)
+4. **If any child depends on another child, set the dependency natively via `addBlockedBy`.** When the architect's split proposal says "B consumes A's primitives" or "B depends on A landing first," the LATER child (B) needs to be marked as blocked-by the EARLIER child (A). Use the GraphQL mutation:
+   ```bash
+   gh api graphql -f query='mutation($issueId: ID!, $blockingIssueId: ID!) {
+     addBlockedBy(input: { issueId: $issueId, blockingIssueId: $blockingIssueId }) {
+       issue { number }
+     }
+   }' -f issueId="$(gh issue view <B> --json id -q '.id')" -f blockingIssueId="$(gh issue view <A> --json id -q '.id')"
+   ```
+   The dispatcher's `hasOpenBlockers` check then prevents B from being architected/developed until A closes — automatic unblock when A's PR merges. **Do NOT skip this step.** Without it, B's developer agent will hit a retry loop trying to implement against A's missing API (Pyrycode #41 burned ~$4 this way before the agent self-halted).
+5. Move the parent's project status to **Done**, then close the original issue with a comment summarizing the split. (The dispatcher's closed-sweep will catch you if you forget the status move, but doing it explicitly keeps the board clean immediately.)
 
 **Each child must be self-contained.** Write each child's body as if the parent never existed — full scope, full AC, links to upstream design docs (`docs/multi-session.md`, etc.). Do NOT reference parent spec sections by name; the parent spec is throwaway context once the split happens. Each child gets its own architect run that designs from the body alone.
 

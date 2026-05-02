@@ -112,6 +112,9 @@ export interface DecisionItem {
   id: string;
   issueNumber: number;
   labels: string[];
+  /** GitHub-native blocked-by relationships. Optional; defaults to empty
+   *  (no blockers). Auto-advance excludes items with any OPEN blocker. */
+  blockedBy?: { number: number; state: "OPEN" | "CLOSED" }[];
 }
 
 /** A single column-to-column move the dispatcher will execute. */
@@ -166,7 +169,8 @@ export function decideAutoAdvance(
   const isEligible = (item: DecisionItem, readyLabel: string): boolean =>
     item.issueNumber > 0 &&
     item.labels.includes(readyLabel) &&
-    !item.labels.some(l => l.startsWith("needs-rework:") || l.startsWith("error:"));
+    !item.labels.some(l => l.startsWith("needs-rework:") || l.startsWith("error:")) &&
+    !hasOpenBlockers(item.blockedBy ?? []);
 
   for (const rule of rules) {
     const all = itemsByColumn.get(rule.from) ?? [];
@@ -348,6 +352,31 @@ export function hasOpenBlockers(
   blockers: { number: number; state: "OPEN" | "CLOSED" }[],
 ): boolean {
   return blockers.some(b => b.state === "OPEN");
+}
+
+/**
+ * True if this dispatch attempt should be skipped because the ticket
+ * has open blockers AND the agent's work depends on the blocker's API.
+ *
+ * **PO bypasses this check.** Refinement (user story shape, AC, size)
+ * is cheap prep work that doesn't depend on the blocker's
+ * implementation. Allowing PO to refine in advance means the ticket is
+ * ready to flow the moment the blocker resolves — no PO-refinement
+ * delay added on top of the blocker wait.
+ *
+ * All other agents (architect, developer, code-review, documentation)
+ * need the blocker's actual code/API to exist on main. They wait.
+ *
+ * Auto-advance from Backlog → In Architecture also respects the block
+ * (see `decideAutoAdvance`); blocked tickets stay in Backlog with their
+ * `ready:po` label until the blocker resolves.
+ */
+export function shouldSkipBlockedFor(
+  agentName: string,
+  blockers: { number: number; state: "OPEN" | "CLOSED" }[],
+): boolean {
+  if (agentName === "po") return false;
+  return hasOpenBlockers(blockers);
 }
 
 // --------- Auto-commit safety net ---------

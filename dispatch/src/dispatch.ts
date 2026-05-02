@@ -21,6 +21,7 @@ import {
   shouldAutoCommit,
   shouldUseWorktree,
   hasOpenBlockers,
+  shouldSkipBlockedFor,
 } from "./lib.js";
 
 // Load .env from agents repo root (where dispatch lives).
@@ -851,12 +852,13 @@ async function pollLoop(): Promise<void> {
             continue;
           }
 
-          // GitHub-native dependency: skip if any blockedBy issue is OPEN.
-          // Avoids the retry-loop class of failures where a developer agent
-          // keeps re-running on a ticket whose dependency hasn't landed
-          // (Pyrycode #41 hit this 6 times, ~$4 burned). The blocker
-          // closing is the unblock signal — no manual label flips needed.
-          if (item.issueNumber > 0 && hasOpenBlockers(item.blockedBy)) {
+          // GitHub-native dependency check: skip if blockers are open
+          // AND this agent's work depends on the blocker. PO bypasses
+          // this — refinement (user story shape, AC, size) is cheap prep
+          // work that doesn't depend on the blocker's implementation, so
+          // queueing PO on blocked tickets means they're ready to flow
+          // the moment the blocker resolves. See `shouldSkipBlockedFor`.
+          if (item.issueNumber > 0 && shouldSkipBlockedFor(agent.name, item.blockedBy)) {
             const open = item.blockedBy.filter(b => b.state === "OPEN").map(b => `#${b.number}`).join(", ");
             console.log(`   🔒 #${item.issueNumber} blocked by ${open} — skipping ${agent.name} dispatch`);
             continue;
