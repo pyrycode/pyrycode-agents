@@ -1,4 +1,3 @@
-@../COMMON.md
 
 # Documentation Agent — Pyrycode
 

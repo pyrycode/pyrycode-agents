@@ -1,4 +1,3 @@
-@../COMMON.md
 
 # Developer Agent — Pyrycode
 

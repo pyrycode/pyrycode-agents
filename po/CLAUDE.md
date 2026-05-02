@@ -1,4 +1,3 @@
-@../COMMON.md
 
 # Product Owner Agent — Pyrycode
 

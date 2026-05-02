@@ -40,6 +40,7 @@ import {
   extractReworkCount,
   REWORK_LOOP_THRESHOLD,
   findAdvanceRule,
+  buildSystemPrompt,
 } from "./lib.js";
 
 describe("resolveAgentsRepoRoot", () => {
@@ -1015,5 +1016,35 @@ describe("findAdvanceRule", () => {
       const found = findAdvanceRule(AUTO_ADVANCE_RULES, rule.from, [rule.readyLabel]);
       assert.equal(found, rule);
     }
+  });
+});
+
+describe("buildSystemPrompt", () => {
+  test("null common returns perAgent unchanged", () => {
+    assert.equal(buildSystemPrompt(null, "agent body"), "agent body");
+  });
+
+  test("empty common returns perAgent unchanged", () => {
+    assert.equal(buildSystemPrompt("", "agent body"), "agent body");
+  });
+
+  test("whitespace-only common returns perAgent unchanged", () => {
+    assert.equal(buildSystemPrompt("   \n\n  ", "agent body"), "agent body");
+  });
+
+  test("common content prepended with separator", () => {
+    assert.equal(
+      buildSystemPrompt("common preamble", "agent body"),
+      "common preamble\n\n---\n\nagent body",
+    );
+  });
+
+  test("multi-line common content preserved", () => {
+    const common = "# Common\n\nLine 1\nLine 2";
+    const perAgent = "# Agent\n\nLine A";
+    assert.equal(
+      buildSystemPrompt(common, perAgent),
+      "# Common\n\nLine 1\nLine 2\n\n---\n\n# Agent\n\nLine A",
+    );
   });
 });

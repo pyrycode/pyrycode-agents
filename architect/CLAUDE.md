@@ -1,4 +1,3 @@
-@../COMMON.md
 
 # Architect Agent — Pyrycode
 

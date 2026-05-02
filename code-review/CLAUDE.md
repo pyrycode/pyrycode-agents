@@ -1,4 +1,3 @@
-@../COMMON.md
 
 # Code Review Agent — Pyrycode
 
