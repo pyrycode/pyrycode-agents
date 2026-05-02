@@ -22,6 +22,8 @@ import {
   shouldUseWorktree,
   hasOpenBlockers,
   shouldSkipBlockedFor,
+  extractReworkCount,
+  REWORK_LOOP_THRESHOLD,
 } from "./lib.js";
 
 // Load .env from agents repo root (where dispatch lives).
@@ -797,14 +799,49 @@ async function runReworkRouting(client: GitHubProjectClient): Promise<void> {
   // surface lives in lib.test.ts.
   const routes = decideReworkRoutes(AGENT_COLUMN_MAP, itemsByColumn);
 
-  // Apply each route: move the item, then strip the listed labels.
+  // Apply each route: check rework counter (halt at threshold), move
+  // the item, strip stale labels, increment the counter.
   for (const route of routes) {
+    // Find the source item to read its current rework count.
+    const srcItems = itemsByColumn.get(route.fromColumn) ?? [];
+    const srcItem = srcItems.find(it => it.id === route.itemId);
+    const currentCount = srcItem ? extractReworkCount(srcItem.labels) : 0;
+
+    // Circuit breaker: halt rework routing on tickets that have reached
+    // the threshold. Adds error:rework-loop and a comment for human
+    // attention. Catches the recursive-rework class of failure
+    // (Pyrycode #41 hit 6 dev↔architect rounds before the dev agent
+    // self-halted by intelligence — this makes the halt structural).
+    if (currentCount >= REWORK_LOOP_THRESHOLD) {
+      try {
+        await client.addLabel(route.issueNumber, "error:rework-loop");
+        await client.addComment(
+          route.issueNumber,
+          `## 🛑 Rework loop detected\n\nThis ticket has been rework'd ${currentCount} times across the pipeline. ` +
+          `Halting dispatch to prevent further token burn.\n\n` +
+          `**Triggering label this round:** \`${route.triggerLabel}\`\n` +
+          `**Routed from:** ${route.fromColumn} (would have moved to ${route.toColumn})\n\n` +
+          `Manual intervention required. Inspect prior agent comments to find the root cause; ` +
+          `clear \`error:rework-loop\` and \`rework-count:${currentCount}\` to resume dispatch.`,
+        );
+        console.log(`   🛑 Rework loop: #${route.issueNumber} hit threshold ${REWORK_LOOP_THRESHOLD} — halting dispatch (was: ${route.fromColumn} → ${route.toColumn})`);
+      } catch (e) {
+        console.warn(`   ⚠️  Failed to set rework-loop error on #${route.issueNumber}: ${e}`);
+      }
+      continue;
+    }
+
     try {
       await client.updateItemStatus(route.itemId, route.toColumn);
       for (const label of route.labelsToStrip) {
         try { await client.removeLabel(route.issueNumber, label); } catch {}
       }
-      console.log(`   ↩️  Rework: moved #${route.issueNumber} from ${route.fromColumn} → ${route.toColumn} (${route.triggerLabel})`);
+      // Bump the rework counter. Strip the old label first if present.
+      if (currentCount > 0) {
+        try { await client.removeLabel(route.issueNumber, `rework-count:${currentCount}`); } catch {}
+      }
+      try { await client.addLabel(route.issueNumber, `rework-count:${currentCount + 1}`); } catch {}
+      console.log(`   ↩️  Rework: moved #${route.issueNumber} from ${route.fromColumn} → ${route.toColumn} (${route.triggerLabel}, count ${currentCount + 1}/${REWORK_LOOP_THRESHOLD})`);
     } catch (e) {
       console.warn(`   ⚠️  Failed to route rework for #${route.issueNumber}: ${e}`);
     }

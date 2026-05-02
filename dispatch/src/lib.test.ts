@@ -37,6 +37,8 @@ import {
   shouldUseWorktree,
   hasOpenBlockers,
   shouldSkipBlockedFor,
+  extractReworkCount,
+  REWORK_LOOP_THRESHOLD,
   findAdvanceRule,
 } from "./lib.js";
 
@@ -764,6 +766,53 @@ describe("shouldSkipBlockedFor", () => {
       shouldSkipBlockedFor("architect", [{ number: 40, state: "CLOSED" }]),
       false,
     );
+  });
+});
+
+describe("extractReworkCount", () => {
+  test("empty labels → 0", () => {
+    assert.equal(extractReworkCount([]), 0);
+  });
+
+  test("no rework-count label → 0", () => {
+    assert.equal(extractReworkCount(["size:s", "ready:po"]), 0);
+  });
+
+  test("single rework-count:2 → 2", () => {
+    assert.equal(extractReworkCount(["size:s", "rework-count:2", "ready:po"]), 2);
+  });
+
+  test("rework-count:0 → 0 (legitimate zero, not a missing label)", () => {
+    // Edge case: a ticket may explicitly carry rework-count:0 if the
+    // counter was reset. Don't conflate with "no label present" in tests.
+    assert.equal(extractReworkCount(["rework-count:0"]), 0);
+  });
+
+  test("malformed rework-count → 0", () => {
+    // Defensively tolerate garbage. Don't crash on a typo'd label.
+    assert.equal(extractReworkCount(["rework-count:abc"]), 0);
+    assert.equal(extractReworkCount(["rework-count:"]), 0);
+  });
+
+  test("multiple rework-count labels → max wins", () => {
+    // Pathological state — shouldn't happen in normal operation, but
+    // if it does, bias toward halting (max is safer than min). The
+    // worst-case rework count is the truthful one.
+    assert.equal(
+      extractReworkCount(["rework-count:1", "rework-count:3", "rework-count:2"]),
+      3,
+    );
+  });
+
+  test("negative rework-count → 0 (treated as invalid)", () => {
+    assert.equal(extractReworkCount(["rework-count:-1"]), 0);
+  });
+
+  test("REWORK_LOOP_THRESHOLD is 3 (locked default)", () => {
+    // Adjusting the threshold is a deliberate policy change. This test
+    // makes the default explicit and forces an update to the test if
+    // the constant changes — discussion-required, not silent drift.
+    assert.equal(REWORK_LOOP_THRESHOLD, 3);
   });
 });
 

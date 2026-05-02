@@ -481,6 +481,47 @@ export function extractReworkTarget(label: string): string | null {
   return target.length > 0 ? target : null;
 }
 
+// --------- Rework loop circuit-breaker ---------
+
+/**
+ * Number of rework rounds a single ticket can absorb before the dispatcher
+ * halts dispatch and adds `error:rework-loop`. Adjusting this is a
+ * deliberate policy change — see the test in lib.test.ts that locks the
+ * default to 3.
+ *
+ * Why 3: the typical legitimate rework cycle is one round (agent finds
+ * issue, routes back, fix lands, advances). A second round means the
+ * fix wasn't right. A third round is unusual but defensible. A fourth
+ * round is the loop pattern Pyrycode #41 hit (6 dispatches, ~$4
+ * burned, dev agent self-halted by intelligence rather than structure).
+ * Halting at 3 catches genuine loops well before they accumulate cost.
+ */
+export const REWORK_LOOP_THRESHOLD = 3;
+
+/**
+ * Read the current rework count from a ticket's labels. Looks for any
+ * `rework-count:N` label and returns the maximum value found (or 0 if
+ * none present). Multiple count labels shouldn't occur in normal
+ * operation, but if they do, the maximum is the safest read — biases
+ * toward halting rather than under-counting.
+ *
+ * Tolerates malformed labels (`rework-count:abc`, `rework-count:`) by
+ * treating them as 0. Negative values are treated as invalid.
+ */
+export function extractReworkCount(labels: string[]): number {
+  const prefix = "rework-count:";
+  let max = 0;
+  for (const label of labels) {
+    if (!label.startsWith(prefix)) continue;
+    const tail = label.slice(prefix.length);
+    if (tail.length === 0) continue;
+    const n = parseInt(tail, 10);
+    if (isNaN(n) || n < 0) continue;
+    if (n > max) max = n;
+  }
+  return max;
+}
+
 // --------- Auto-advance rule lookup ---------
 
 /**
