@@ -638,9 +638,13 @@ describe("decideReworkRoutes", () => {
     assert.equal(r[0].triggerLabel, "needs-rework:po");
   });
 
-  test("self-loop (needs-rework:architect in In Architecture) → no route", () => {
-    // Routing to the same column is a no-op; the agent's already there.
-    // The dispatcher handles re-dispatch via shouldSkipDispatch.
+  test("same-column case (needs-rework:architect in In Architecture) → strip-only route", () => {
+    // Earlier versions skipped same-column cases as "self-loops," but that
+    // left the rework label permanently on the item — and shouldSkipDispatch
+    // permanently blocked agent dispatch as a result. Now we DO emit a
+    // route; the caller's updateItemStatus is a no-op for same-column,
+    // but the label-strip + rework-count bump still happen, which is what
+    // unblocks dispatch. Surfaced as Pyrycode #59 broader bug 2026-05-02.
     const r = decideReworkRoutes(
       AGENT_COLUMN_MAP,
       items(["In Architecture", [{
@@ -649,7 +653,32 @@ describe("decideReworkRoutes", () => {
         labels: ["needs-rework:architect"],
       }]]),
     );
-    assert.deepEqual(r, []);
+    assert.equal(r.length, 1);
+    assert.equal(r[0].itemId, "i1");
+    assert.equal(r[0].fromColumn, "In Architecture");
+    assert.equal(r[0].toColumn, "In Architecture");
+    assert.equal(r[0].triggerLabel, "needs-rework:architect");
+    assert.deepEqual(r[0].labelsToStrip, ["needs-rework:architect"]);
+  });
+
+  test("same-column case for PO in Backlog → strip-only route", () => {
+    // The exact scenario from #45 in 2026-05-02: ticket manually moved to
+    // Backlog with needs-rework:po set. Without this route, PO dispatch
+    // was permanently blocked.
+    const r = decideReworkRoutes(
+      AGENT_COLUMN_MAP,
+      items(["Backlog", [{
+        id: "i45",
+        issueNumber: 45,
+        labels: ["needs-rework:po", "size:s"],
+      }]]),
+    );
+    assert.equal(r.length, 1);
+    assert.equal(r[0].fromColumn, "Backlog");
+    assert.equal(r[0].toColumn, "Backlog");
+    assert.equal(r[0].triggerLabel, "needs-rework:po");
+    // size:s is not a state-prefix label; should NOT be stripped.
+    assert.deepEqual(r[0].labelsToStrip, ["needs-rework:po"]);
   });
 
   test("rework label strips ready:/error:/wip: along with itself", () => {

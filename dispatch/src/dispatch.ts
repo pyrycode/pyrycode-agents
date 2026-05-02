@@ -841,7 +841,10 @@ async function runReworkRouting(client: GitHubProjectClient): Promise<void> {
         try { await client.removeLabel(route.issueNumber, `rework-count:${currentCount}`); } catch {}
       }
       try { await client.addLabel(route.issueNumber, `rework-count:${currentCount + 1}`); } catch {}
-      console.log(`   ↩️  Rework: moved #${route.issueNumber} from ${route.fromColumn} → ${route.toColumn} (${route.triggerLabel}, count ${currentCount + 1}/${REWORK_LOOP_THRESHOLD})`);
+      const transition = route.fromColumn === route.toColumn
+        ? `cleared at ${route.toColumn}`
+        : `moved ${route.fromColumn} → ${route.toColumn}`;
+      console.log(`   ↩️  Rework: #${route.issueNumber} ${transition} (${route.triggerLabel}, count ${currentCount + 1}/${REWORK_LOOP_THRESHOLD})`);
     } catch (e) {
       console.warn(`   ⚠️  Failed to route rework for #${route.issueNumber}: ${e}`);
     }

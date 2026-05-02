@@ -260,9 +260,16 @@ export interface ReworkRoute {
  *   - Target must extract cleanly via `extractReworkTarget` (rejects bare
  *     `needs-rework:` and non-rework labels).
  *   - Target must be a known agent (in `agentColumnMap`).
- *   - Target's column must differ from the item's current column —
- *     self-loops aren't routes; the dispatcher's `shouldSkipDispatch`
- *     handles re-dispatch on `needs-rework:<self>`.
+ *
+ * Same-column case (target column == source column) IS routed — earlier
+ * versions skipped this as a "self-loop," but that left the rework label
+ * on the item permanently. Combined with `shouldSkipDispatch` checking
+ * for `needs-rework:<agent>` in `PIPELINE_LABEL_PREFIXES`, the label
+ * persistence permanently blocked dispatch on the matching agent. The
+ * fix: route same-column cases too — the caller's `updateItemStatus`
+ * is a no-op for same-column updates, but the label-strip and
+ * rework-count bump still happen, which unblocks dispatch. Surfaced as
+ * Pyrycode #59's broader bug 2026-05-02.
  *
  * Pure function over already-collected items; the caller does the I/O
  * (status updates and label removals).
@@ -284,7 +291,6 @@ export function decideReworkRoutes(
         if (target === null) continue;
         const targetColumn = agentColumnMap.get(target);
         if (!targetColumn) continue;
-        if (targetColumn === fromColumn) continue; // self-loop
 
         const labelsToStrip = [
           label,
