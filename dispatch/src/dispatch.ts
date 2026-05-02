@@ -24,6 +24,7 @@ import {
   shouldSkipBlockedFor,
   extractReworkCount,
   REWORK_LOOP_THRESHOLD,
+  findFeatureBranch,
 } from "./lib.js";
 
 // Load .env from agents repo root (where dispatch lives).
@@ -707,12 +708,37 @@ async function dispatchToAgent(
 async function runClosedSweep(client: GitHubProjectClient): Promise<void> {
   try {
     const closed = await client.getClosedItemsNotInDone();
+    if (closed.length === 0) return;
+
+    // Fetch feature/* refs once per sweep pass. If this fails the sweep
+    // still moves tickets to Done; branch deletion is best-effort.
+    let branches: Array<{ name: string; id: string }> = [];
+    try {
+      branches = await client.listFeatureBranches();
+    } catch (e) {
+      console.warn(`   ⚠️  Could not list feature branches; skipping branch cleanup: ${e}`);
+    }
+    const branchIdByName = new Map(branches.map(b => [b.name, b.id]));
+    const branchNames = [...branchIdByName.keys()];
+
     for (const item of closed) {
       try {
         await client.updateItemStatus(item.id, "Done");
         console.log(`   ✓ Closed-sweep: moved #${item.issueNumber} (${item.status} → Done)`);
       } catch (e) {
         console.warn(`   ⚠️  Failed to move closed #${item.issueNumber} to Done: ${e}`);
+        continue; // Don't try to delete the branch if the status move failed.
+      }
+
+      const match = findFeatureBranch(item.issueNumber, branchNames);
+      if (!match) continue;
+      const refId = branchIdByName.get(match);
+      if (!refId) continue;
+      try {
+        await client.deleteRef(refId);
+        console.log(`   🌿 Deleted stale branch ${match}`);
+      } catch (e) {
+        console.warn(`   ⚠️  Failed to delete ${match}: ${e}`);
       }
     }
   } catch (error: any) {

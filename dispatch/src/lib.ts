@@ -528,6 +528,22 @@ export function extractReworkCount(labels: string[]): number {
   return max;
 }
 
+// --------- Feature branch lookup ---------
+
+/**
+ * Return the entry from `branchList` that matches `feature/<n>` exactly,
+ * or null if no such entry exists. Pure: no I/O, side-effect free.
+ *
+ * Match is case-sensitive and uses exact equality — `feature/45` does NOT
+ * match `feature/450` or `feature/45-foo`. Exact-match is the safe default
+ * for a numeric ticket key that could otherwise prefix-match an unrelated
+ * ticket and silently delete the wrong branch.
+ */
+export function findFeatureBranch(n: number, branchList: string[]): string | null {
+  const target = `feature/${n}`;
+  return branchList.includes(target) ? target : null;
+}
+
 // --------- Auto-advance rule lookup ---------
 
 /**
