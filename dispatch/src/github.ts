@@ -388,6 +388,43 @@ export class GitHubProjectClient {
     }
   }
 
+  /**
+   * Return the names + node IDs of every ref under refs/heads/feature/.
+   * The node ID is needed for `deleteRef`. Capped at 100 refs per call;
+   * the closed-sweep deletes the universe down so this should not grow
+   * unbounded in practice. With `refPrefix` set, the returned `name`
+   * field is the unqualified branch name (e.g. "feature/45") — that's
+   * what callers compare against.
+   */
+  async listFeatureBranches(): Promise<Array<{ name: string; id: string }>> {
+    const result: any = await this.gql(`
+      query($owner: String!, $repo: String!) {
+        repository(owner: $owner, name: $repo) {
+          refs(refPrefix: "refs/heads/feature/", first: 100) {
+            nodes { name id }
+          }
+        }
+      }
+    `, {
+      owner: this.config.owner,
+      repo: this.config.repo,
+    });
+    return result.repository.refs.nodes;
+  }
+
+  /**
+   * Delete a ref by node ID. Used by the closed-sweep to remove orphaned
+   * feature branches. Caller is responsible for confirming the ref should
+   * be deleted (closed-sweep guards via `findFeatureBranch`).
+   */
+  async deleteRef(refId: string): Promise<void> {
+    await this.gql(`
+      mutation($refId: ID!) {
+        deleteRef(input: { refId: $refId }) { clientMutationId }
+      }
+    `, { refId });
+  }
+
   async removeLabel(issueNumber: number, label: string): Promise<void> {
     const response = await fetchWithRetry(
       `https://api.github.com/repos/${this.config.owner}/${this.config.repo}/issues/${issueNumber}/labels/${encodeURIComponent(label)}`,

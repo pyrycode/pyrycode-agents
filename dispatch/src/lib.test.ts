@@ -40,6 +40,7 @@ import {
   extractReworkCount,
   REWORK_LOOP_THRESHOLD,
   findAdvanceRule,
+  findFeatureBranch,
 } from "./lib.js";
 
 describe("resolveAgentsRepoRoot", () => {
@@ -997,6 +998,39 @@ describe("agent claudeMdPath resolution", () => {
       );
     }
   });
+});
+
+describe("findFeatureBranch", () => {
+  // Three table-driven cases covering the spec's AC. The third case is
+  // load-bearing: it locks in exact-match against the prefix-collision
+  // risk that would otherwise silently delete the wrong branch (e.g.
+  // closing #4 must NOT match feature/41 or feature/450).
+  const cases: { name: string; n: number; branches: string[]; want: string | null }[] = [
+    {
+      name: "branch present",
+      n: 45,
+      branches: ["feature/41", "feature/45", "feature/72"],
+      want: "feature/45",
+    },
+    {
+      name: "branch absent",
+      n: 99,
+      branches: ["feature/41", "feature/45", "feature/72"],
+      want: null,
+    },
+    {
+      name: "list contains unrelated feature/<x> entries (no prefix match)",
+      n: 4,
+      branches: ["feature/41", "feature/45", "feature/450"],
+      want: null,
+    },
+  ];
+
+  for (const c of cases) {
+    test(c.name, () => {
+      assert.strictEqual(findFeatureBranch(c.n, c.branches), c.want);
+    });
+  }
 });
 
 describe("findAdvanceRule", () => {
