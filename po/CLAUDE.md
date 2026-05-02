@@ -41,24 +41,35 @@ As a [role], I want [feature] so that [benefit].
 [Optional: pointers for the architect. Not implementation details.]
 
 ## Size Estimate
-[XS/S/M — see sizing guide below]
+[XS/S — see sizing guide below]
 ```
 
 If the ticket already has some of these sections, preserve their content unless they're wrong. Don't rewrite the human's framing for sport.
 
 ## Sizing Guide
 
-**Default S. Bias toward smaller. Justify any size up.**
+**Only two sizes: XS and S. M is not a valid size.** If the work doesn't fit S, split it.
 
 - **XS** — <30 lines of production code; trivial change (rename, single-literal edit, formatting)
-- **S** — <100 lines of production code; straightforward implementation following an established pattern. **Default size for any non-trivial ticket.**
-- **M** — <150 lines of production code; requires some design thought. **Allowed only when the work clearly doesn't fit S.** Record concrete reasoning in Technical Notes: *"Sized M because: <named factor — single coupled refactor / cross-package wiring touching N specific files / hot-path concurrency primitive>."* Generic appeals to risk are not enough.
+- **S** — <100 lines of production code; straightforward implementation following an established pattern. **The maximum size for any single ticket.**
 
 The line count covers production code. Tests scale roughly linearly with it (TDD doubles the diff; size by what the developer writes, not what review sees).
 
-**File count is not a sizing axis.** A 50-line change across 4 files might be a trivial rename; a 100-line change in one file might be a hairy concurrency primitive. The line count + the sentence test below are the real signals.
+**No `size:m` rationalization escape.** Earlier versions of this guide allowed an M tier with a "Sized M because: <factor>" paragraph. That escape was removed 2026-05-02 after Pyrycode #45 (sized M, 5-file cross-package coordination, 10 AC) hit max_turns and required recovery. The pattern repeated across the architect's identical "Why M, not split" escape — both were rationalization paths that consistently produced max_turns failures.
 
-**Architect can override your size in either direction.** During the design pass, the architect either confirms your size, sizes M with a "Why M, not split" justification, or proposes a split via `needs-rework:po`. Splitting is the architect's exclusive call — splits require knowing the seams, which only emerges from sketching the design.
+**Quantitative red lines — any one hit means SPLIT, no judgment call:**
+
+- More than 3 new or substantially-edited files
+- More than ~150 lines of production code (estimate generously)
+- More than 5 new exported types or interfaces
+- More than 10 call sites in a refactor (Strangler Fig the rename instead)
+- More than 5 acceptance criteria
+- The body needs the word "and" to describe what changes ("introduce the pool **and** wire the control plane")
+- Any always-split pattern from the list below
+
+These are mechanical. If the ticket trips one, you split — you do not size it S "because the parts are coupled" or "because the seams aren't obvious." Couple-sounding work splits cleanly more often than not; the architect's spec on each child surfaces seams the parent body couldn't.
+
+**Architect can override your size downward (S → XS) but cannot bump up.** M is not on the architect's lattice either. If the architect identifies oversized work, they route back via `needs-rework:po` with a split proposal — never bump to M.
 
 When you and the architect independently arrive at the same size, that's two checks and a stronger signal. When you disagree, the architect's view wins because they've sketched the actual design surface.
 
@@ -66,11 +77,9 @@ When you and the architect independently arrive at the same size, that's two che
 
 > "Can you describe this ticket in one sentence without using 'and'?"
 
-If not, it's probably two tickets.
+If not, it's two tickets. This test does the work that file-count was trying to imitate: cross-package work that needs real coordination almost always needs an "and" in its description ("introduce the pool **and** wire the control plane **and** update main.go"). The "and" signal is one of the quantitative red lines above — listed here for emphasis because it's the cheapest to apply during refinement.
 
-This test does the work that file-count was trying to imitate: cross-package work that needs real coordination usually needs an "and" in its description ("introduce the pool **and** wire the control plane **and** update main.go"). Catches the same signal without false-positiving on legitimate test+source pairings.
-
-**If it's bigger than M, split it.** One ticket per concern. The architect will flag oversized tickets back to you with a proposed split (see the architect agent's Workflow → Size check section), but catching it during refinement is cheaper.
+**If it's bigger than S, split it.** One ticket per concern. The architect will flag oversized tickets back to you with a proposed split (see the architect agent's Workflow → Size check section), but catching it during refinement is cheaper.
 
 ## Splitting
 
@@ -141,7 +150,7 @@ If a ticket was routed back to you (`needs-rework:po` from a downstream agent):
 
 ## Output
 
-- For pure refinement: edit the existing issue body via `gh issue edit <number> --body "..."` and apply the size label via `gh issue edit <number> --add-label size:xs` (or `s`, or `m`).
+- For pure refinement: edit the existing issue body via `gh issue edit <number> --body "..."` and apply the size label via `gh issue edit <number> --add-label size:xs` (or `size:s`). **Do not apply `size:m` — it is no longer a valid size. If the work would be M, split.**
 - For splits: see "Splitting" above.
 - For demotion: see "Demoting Back to Inbox" above.
 

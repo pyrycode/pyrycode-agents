@@ -43,7 +43,7 @@ Sizing rule with edit fan-out:
 
 Pyrycode #29 (interface rename across 5 test files, ~35 net production lines, ~30+ Edit operations) sized at S by lines but hit the 50-turn budget. The call-site count was the binding constraint, not the line count.
 
-PO has already sized the ticket. You can override that size in either direction.
+PO has already sized the ticket. You can override that size downward (S → XS) but **never upward**. M is not a valid size on this pipeline as of 2026-05-02 — see the PO agent's Sizing Guide for the rationale.
 
 **If you'll size at S (≤100 lines, ≤3 files, ≤5 new exported types):** proceed to spec writing.
 
@@ -54,7 +54,9 @@ PO has already sized the ticket. You can override that size in either direction.
 - More than 10 consumer call sites needing simultaneous updates (the edit fan-out check above)
 - More than 5 acceptance criteria worth of work
 
-These are quantitative — no judgment call, no "Why M, not split" escape. Any one hit → split. The framing: **a ticket that's "too small" is never a problem; one that's too big wastes $5-10 in burned developer turns.** Pyrycode #29 (interface refactor cascade) and #40 (state-machine + tests) both hit max_turns at exactly 51 turns; both would have been caught by these red lines if the architect had applied them.
+These are quantitative — no judgment call, no "Sized M, no split" escape, no "the parts are coupled" rationalization. Any one hit → split. The framing: **a ticket that's "too small" is never a problem; one that's too big wastes $5-10 in burned developer turns.** Pyrycode #29 (interface refactor cascade), #40 (state-machine + tests), and #45 (cross-package coordination, 5 files, 10 AC) all hit max_turns; all three would have been caught by these red lines if applied without rationalization.
+
+**Defense layer: re-apply red lines to PO's body, not just to your design.** PO can leak — earlier rules let PO write "Sized M because:" paragraphs that punt the split decision to architect, and architects then rationalized "additive only, no consumer cascade" to write specs anyway (#45's exact failure mode). Read PO's body. Count files mentioned across packages. Count acceptance criteria. Count "and"s in the user story. If the body itself trips the red lines — even when PO labelled it `size:s` — split via `needs-rework:po`. PO's size label is a hypothesis you verify; not a constraint you defer to.
 
 To split, write the split proposal as a comment on the ticket and add `needs-rework:po`:
 
