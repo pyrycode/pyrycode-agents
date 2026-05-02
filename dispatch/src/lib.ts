@@ -536,23 +536,3 @@ export function findAdvanceRule(
   return rules.find((r) => r.from === fromColumn && labels.includes(r.readyLabel)) ?? null;
 }
 
-// --------- System prompt assembly ---------
-
-/**
- * Assemble the system prompt content passed to claude via
- * --append-system-prompt-file. Concatenates an optional COMMON.md preamble
- * with the per-agent CLAUDE.md.
- *
- * Why concat instead of @-import: claude code's @-import syntax expands
- * imports for CLAUDE.md (delivered as user message) but not for files
- * passed via --append-system-prompt-file (treated as raw text). Verified
- * empirically 2026-05-02. So the dispatcher is the right place to do the
- * concat — agents stay unaware of the assembly.
- *
- * Returns perAgent unchanged when common is null/empty so the absence of
- * a COMMON.md file is handled gracefully.
- */
-export function buildSystemPrompt(common: string | null, perAgent: string): string {
-  if (!common || common.trim() === "") return perAgent;
-  return common + "\n\n---\n\n" + perAgent;
-}

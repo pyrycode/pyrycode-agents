@@ -24,7 +24,6 @@ import {
   shouldSkipBlockedFor,
   extractReworkCount,
   REWORK_LOOP_THRESHOLD,
-  buildSystemPrompt,
 } from "./lib.js";
 
 // Load .env from agents repo root (where dispatch lives).
@@ -457,9 +456,9 @@ async function dispatchToAgent(
 
   // Agent CLAUDE.md files live in the agents repo, not the main repo
   const claudeMdPath = resolve(agentsRepoRoot, agent.claudeMdPath);
-  let perAgentContent: string;
+  let systemPrompt: string;
   try {
-    perAgentContent = readFileSync(claudeMdPath, "utf-8");
+    systemPrompt = readFileSync(claudeMdPath, "utf-8");
   } catch (e) {
     console.error(`   ❌ Agent CLAUDE.md not found: ${claudeMdPath}`);
     if (item.issueNumber > 0) {
@@ -470,18 +469,6 @@ async function dispatchToAgent(
     }
     return;
   }
-
-  // Optional COMMON.md preamble. claude code's @-import syntax does NOT
-  // expand inside files passed via --append-system-prompt-file (verified
-  // empirically 2026-05-02), so the dispatcher does the concat. COMMON.md
-  // is optional — absence is silently ignored.
-  let commonContent: string | null = null;
-  try {
-    commonContent = readFileSync(resolve(agentsRepoRoot, "COMMON.md"), "utf-8");
-  } catch {
-    // No COMMON.md, proceed with per-agent content only
-  }
-  const systemPrompt = buildSystemPrompt(commonContent, perAgentContent);
 
   const promptFile = resolve(__dirname, `../.prompt-${item.issueNumber}.txt`);
   const systemPromptFile = resolve(__dirname, `../.system-prompt-${agent.name}.txt`);
