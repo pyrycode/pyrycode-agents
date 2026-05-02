@@ -6,6 +6,12 @@ export interface ProjectConfig {
   ownerType: "user" | "organization";
 }
 
+/** Minimal blocker info — issue number + open/closed state. */
+export interface BlockerInfo {
+  number: number;
+  state: "OPEN" | "CLOSED";
+}
+
 export interface ProjectItem {
   id: string;           // Project item ID (for GraphQL mutations)
   issueId: string;      // Issue node ID
@@ -15,6 +21,10 @@ export interface ProjectItem {
   status: string;
   labels: string[];
   url: string;
+  /** Issues that block this one (GitHub native `addBlockedBy` relationship).
+   *  Empty when the ticket has no dependencies. The dispatcher skips
+   *  dispatch on tickets where any entry is `OPEN`. */
+  blockedBy: BlockerInfo[];
 }
 
 export interface AgentConfig {

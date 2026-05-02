@@ -131,6 +131,9 @@ export class GitHubProjectClient {
                     labels(first: 10) {
                       nodes { name }
                     }
+                    blockedBy(first: 10) {
+                      nodes { number state }
+                    }
                   }
                 }
               }
@@ -159,6 +162,10 @@ export class GitHubProjectClient {
         status: itemStatus ?? "no-status",
         labels: node.content.labels.nodes.map((l: any) => l.name),
         url: node.content.url,
+        blockedBy: (node.content.blockedBy?.nodes ?? []).map((b: any) => ({
+          number: b.number,
+          state: b.state,
+        })),
       });
     }
 
@@ -191,6 +198,9 @@ export class GitHubProjectClient {
                     labels(first: 10) {
                       nodes { name }
                     }
+                    blockedBy(first: 10) {
+                      nodes { number state }
+                    }
                   }
                 }
               }
@@ -220,6 +230,10 @@ export class GitHubProjectClient {
         status: itemStatus,
         labels: node.content.labels.nodes.map((l: any) => l.name),
         url: node.content.url,
+        blockedBy: (node.content.blockedBy?.nodes ?? []).map((b: any) => ({
+          number: b.number,
+          state: b.state,
+        })),
       });
     }
 

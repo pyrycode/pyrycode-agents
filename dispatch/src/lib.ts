@@ -327,6 +327,29 @@ export function shouldUseWorktree(agent: AgentConfig): boolean {
   return agent.usesWorktree;
 }
 
+// --------- Issue dependencies ---------
+
+/**
+ * True if any of the listed blockers is still OPEN.
+ *
+ * Uses GitHub's first-class `addBlockedBy` relationship (queryable as
+ * `Issue.blockedBy` in GraphQL, visible in the issue UI as a "Blocked by
+ * #N" badge). The dispatcher skips dispatch on any ticket where this
+ * returns true — a blocked ticket can't make progress until its
+ * dependencies close.
+ *
+ * Avoids the retry-loop class of failures (Pyrycode #41 hit this 6 times,
+ * burning ~$4 of dev tokens, before the dev agent self-halted by
+ * setting `error:developer`). Native `blockedBy` makes the constraint
+ * structural — survives across runs, visible in the GitHub UI, and
+ * doesn't require a custom label scheme.
+ */
+export function hasOpenBlockers(
+  blockers: { number: number; state: "OPEN" | "CLOSED" }[],
+): boolean {
+  return blockers.some(b => b.state === "OPEN");
+}
+
 // --------- Auto-commit safety net ---------
 
 /**

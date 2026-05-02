@@ -20,6 +20,7 @@ import {
   decideReworkRoutes,
   shouldAutoCommit,
   shouldUseWorktree,
+  hasOpenBlockers,
 } from "./lib.js";
 
 // Load .env from agents repo root (where dispatch lives).
@@ -847,6 +848,17 @@ async function pollLoop(): Promise<void> {
           // Label-based dispatch: skip if any of ready:/needs-rework:/wip:/error:
           // is already set for THIS agent. See shouldSkipDispatch in lib.ts.
           if (shouldSkipDispatch(item.labels, agent.name)) {
+            continue;
+          }
+
+          // GitHub-native dependency: skip if any blockedBy issue is OPEN.
+          // Avoids the retry-loop class of failures where a developer agent
+          // keeps re-running on a ticket whose dependency hasn't landed
+          // (Pyrycode #41 hit this 6 times, ~$4 burned). The blocker
+          // closing is the unblock signal — no manual label flips needed.
+          if (item.issueNumber > 0 && hasOpenBlockers(item.blockedBy)) {
+            const open = item.blockedBy.filter(b => b.state === "OPEN").map(b => `#${b.number}`).join(", ");
+            console.log(`   🔒 #${item.issueNumber} blocked by ${open} — skipping ${agent.name} dispatch`);
             continue;
           }
 

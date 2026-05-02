@@ -35,6 +35,7 @@ import {
   decideReworkRoutes,
   shouldAutoCommit,
   shouldUseWorktree,
+  hasOpenBlockers,
   findAdvanceRule,
 } from "./lib.js";
 
@@ -685,6 +686,45 @@ describe("decideReworkRoutes", () => {
     assert.equal(r.length, 1);
     assert.equal(r[0].triggerLabel, "needs-rework:developer");
     assert.equal(r[0].toColumn, "In Development");
+  });
+});
+
+describe("hasOpenBlockers", () => {
+  test("no blockers → false (ticket is not dependency-blocked)", () => {
+    assert.equal(hasOpenBlockers([]), false);
+  });
+
+  test("all blockers CLOSED → false (dependencies satisfied)", () => {
+    // Once a blocker issue closes, the dependency is satisfied and the
+    // ticket can flow. Mirrors GitHub's `issueDependenciesSummary` model:
+    // completed dependencies don't gate progression.
+    assert.equal(
+      hasOpenBlockers([
+        { number: 100, state: "CLOSED" },
+        { number: 101, state: "CLOSED" },
+      ]),
+      false,
+    );
+  });
+
+  test("any OPEN blocker → true (mixed CLOSED + OPEN)", () => {
+    // Even one open blocker holds the ticket. Locks the "blocked"
+    // semantic: ALL blockers must close before the ticket flows.
+    assert.equal(
+      hasOpenBlockers([
+        { number: 100, state: "CLOSED" },
+        { number: 101, state: "OPEN" },
+      ]),
+      true,
+    );
+  });
+
+  test("single OPEN blocker → true", () => {
+    // The Pyrycode #41 case: blocked by #40, which is OPEN. Skip dispatch.
+    assert.equal(
+      hasOpenBlockers([{ number: 40, state: "OPEN" }]),
+      true,
+    );
   });
 });
 
