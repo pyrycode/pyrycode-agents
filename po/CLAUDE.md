@@ -110,6 +110,25 @@ If a ticket combines multiple concerns, the architect proposes a split via `need
 
 1. Use `gh issue create` to create one issue per concern (smaller, sized correctly).
 2. Use `gh project item-add 1 --owner pyrycode --url <new-issue-url>` to add each new issue to the project. Then set status to **Backlog** so they're ready for refinement (not Inbox — they've been triaged, the original was already in Backlog).
+
+   **Position children at the top of Backlog in dependency order.** Children inherit the parent's priority — if the parent was being actively worked on, the children represent the same work just sliced. Default GitHub project ordering puts children wherever, which leaves them behind tickets that should wait for them. Use `updateProjectV2ItemPosition` with `afterId` chaining to place children A, B, C, ... in order at the top:
+   ```bash
+   # First child: move to top (afterId=null)
+   gh api graphql -f query='mutation($projectId: ID!, $itemId: ID!) {
+     updateProjectV2ItemPosition(input: { projectId: $projectId, itemId: $itemId, afterId: null }) {
+       items { totalCount }
+     }
+   }' -f projectId="$PROJECT_ID" -f itemId="$A_ITEM_ID"
+
+   # Each subsequent child: position after the previous child
+   gh api graphql -f query='mutation($projectId: ID!, $itemId: ID!, $afterId: ID!) {
+     updateProjectV2ItemPosition(input: { projectId: $projectId, itemId: $itemId, afterId: $afterId }) {
+       items { totalCount }
+     }
+   }' -f projectId="$PROJECT_ID" -f itemId="$B_ITEM_ID" -f afterId="$A_ITEM_ID"
+   # ... and so on for C, D, ...
+   ```
+   The chain — first child to top, each subsequent after the previous — yields `[A, B, C, ..., others]` at the top of Backlog. **Do NOT use the naive "move every child to top" approach in creation order** — last-moved-to-top wins, which reverses the order. The reverse-iterate alternative works but is non-obvious; afterId chaining is explicit and scales cleanly.
 3. Sub-issue link them to the original via the GraphQL `addSubIssue` mutation, or by referencing the parent issue number in the body ("Split from #N").
 4. **If any child depends on another child, set the dependency natively via `addBlockedBy`.** When the architect's split proposal says "B consumes A's primitives" or "B depends on A landing first," the LATER child (B) needs to be marked as blocked-by the EARLIER child (A). Use the GraphQL mutation:
    ```bash
