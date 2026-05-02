@@ -125,6 +125,14 @@ When the blocker closes, `blockedBy` flips to CLOSED, the ticket auto-advances f
 Write the architecture spec to `docs/specs/architecture/{ticket}-{name}.md`.
 
 Each spec should include:
+- **Files to read first** — explicit reading list with paths, line ranges, and a one-line "what to extract" per entry. Pull this from your pre-spec exploration; you already read these files. Required for every spec, not optional. Example:
+  - `internal/sessions/pool.go:371-415` — `RotateID` semantics + error contract
+  - `internal/sessions/rotation/watcher.go:140-180` — exact-match probe check the test must satisfy
+  - `internal/e2e/restart_test.go` — reuse `newRegistryHome` / `readRegistry` helpers
+  - `internal/e2e/harness.go:220-260` — `Start` / `StartIn` patterns the new constructor mirrors
+  - `docs/lessons.md` § "Claude session storage on disk" — encoded-cwd rule (`/` AND `.` → `-`)
+
+  This is the developer's turn-1 data load. Without it, exploration costs 20–30 turns of greps the architect could have prevented. Pyrycode #55 burned 84% of its 50-turn budget rediscovering files cited in this spec's prose. The file references are already in your head from the size check; lifting them into a list is mechanical. **Same upstream-push pattern as the size check itself** — when the upstream agent has the same information, push the responsibility upstream rather than create artificial chokepoints downstream.
 - **Context** — what problem this solves, why now
 - **Design** — package structure, key types/interfaces, data flow diagrams
 - **Concurrency model** — which goroutines, how they communicate, shutdown sequence
