@@ -873,6 +873,20 @@ async function pollLoop(): Promise<void> {
   const POLL_INTERVAL = 30_000;
 
   while (true) {
+    // Reconcile state FIRST every cycle: closed-sweep, route rework labels,
+    // auto-advance ready:* tickets. This makes restart behavior predictable —
+    // any ticket left in `ready:<agent>` in the previous agent's column moves
+    // forward on the same cycle as the next agent dispatch, not the cycle
+    // after. Without this, a restart with a `ready:developer` ticket in In
+    // Development takes two full cycles to advance + dispatch code-review;
+    // if the dispatcher stops between the cycles, the ticket stays stuck.
+    // Surfaced 2026-05-02 after dispatcher stop left #73 unable to advance
+    // through code-review. The end-of-cycle maintenance (below) stays as a
+    // safety net for state changes produced by this cycle's dispatch.
+    await runClosedSweep(client);
+    await runReworkRouting(client);
+    await runAutoAdvance(client);
+
     // WIP=1: dispatch exactly one agent per cycle, then restart.
     // The finish-first poll order ensures the most-advanced ticket is always processed first.
     // This prevents round-robin (all tickets through architect, then all through developer)
