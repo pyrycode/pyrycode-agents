@@ -18,6 +18,7 @@ import {
   isPipelineInFlight,
   decideAutoAdvance,
   decideReworkRoutes,
+  decideDoneCleanup,
   shouldAutoCommit,
   shouldUseWorktree,
   hasOpenBlockers,
@@ -851,6 +852,44 @@ async function runReworkRouting(client: GitHubProjectClient): Promise<void> {
   }
 }
 
+// Done-cleanup: strip pipeline-state labels from any ticket sitting in
+// the Done column. Runs every maintenance pass alongside auto-advance.
+//
+// `runAutoAdvance` moves tickets into Done by status-only — it doesn't
+// strip the `ready:<agent>` labels that drove each advance. The auto-merge
+// block (later in pollLoop) cleans labels, but only when a PR exists and
+// merges cleanly. Doc-only tickets, manually-merged PRs, and
+// closed-as-won't-fix all reach Done with their pipeline labels intact.
+// This pass closes the gap. See `decideDoneCleanup` in lib.ts.
+
+async function runDoneCleanup(client: GitHubProjectClient): Promise<void> {
+  let doneItems: ProjectItem[];
+  try {
+    doneItems = await client.getItemsByStatus("Done");
+  } catch (error: any) {
+    console.error(`Error fetching Done items for cleanup: ${error.message}`);
+    return;
+  }
+
+  // Pure decision — see decideDoneCleanup for what gets stripped (pipeline
+  // state labels + rework-count:) and what doesn't (size:, priority:,
+  // merged, free-form tags). Test surface lives in lib.test.ts.
+  const cleanups = decideDoneCleanup(doneItems);
+
+  for (const cleanup of cleanups) {
+    for (const label of cleanup.labelsToStrip) {
+      try {
+        await client.removeLabel(cleanup.issueNumber, label);
+      } catch {
+        // Soft-fail: label may have been removed by another path
+        // (auto-merge cleanup, manual edit) between the fetch and this
+        // op. Idempotency carries us through.
+      }
+    }
+    console.log(`   🧹 Done-cleanup: stripped ${cleanup.labelsToStrip.length} pipeline label(s) from #${cleanup.issueNumber}`);
+  }
+}
+
 async function pollLoop(): Promise<void> {
   const client = new GitHubProjectClient({
     owner: process.env.GITHUB_OWNER!,
@@ -874,7 +913,8 @@ async function pollLoop(): Promise<void> {
 
   while (true) {
     // Reconcile state FIRST every cycle: closed-sweep, route rework labels,
-    // auto-advance ready:* tickets. This makes restart behavior predictable —
+    // auto-advance ready:* tickets, then strip pipeline labels off any
+    // ticket now sitting in Done. This makes restart behavior predictable —
     // any ticket left in `ready:<agent>` in the previous agent's column moves
     // forward on the same cycle as the next agent dispatch, not the cycle
     // after. Without this, a restart with a `ready:developer` ticket in In
@@ -886,6 +926,7 @@ async function pollLoop(): Promise<void> {
     await runClosedSweep(client);
     await runReworkRouting(client);
     await runAutoAdvance(client);
+    await runDoneCleanup(client);
 
     // WIP=1: dispatch exactly one agent per cycle, then restart.
     // The finish-first poll order ensures the most-advanced ticket is always processed first.
@@ -954,11 +995,14 @@ async function pollLoop(): Promise<void> {
 
           // Sweep closed-but-not-Done first (parent of a split, user-closed
           // tickets), then route rework labels (backward), then auto-advance
-          // (forward). Order matters: closed → done before route/advance so
-          // we never waste an op on a closed ticket.
+          // (forward), then strip pipeline labels off Done tickets. Order
+          // matters: closed → done before route/advance so we never waste
+          // an op on a closed ticket; Done-cleanup last so it sees tickets
+          // brought into Done by closed-sweep AND auto-advance this cycle.
           await runClosedSweep(client);
           await runReworkRouting(client);
           await runAutoAdvance(client);
+          await runDoneCleanup(client);
 
           // Break both loops — restart from the most-advanced column
           dispatched = true;
@@ -969,12 +1013,14 @@ async function pollLoop(): Promise<void> {
       }
     }
 
-    // Maintenance: closed-sweep, route rework labels, auto-advance. Runs
-    // even when nothing was dispatched (catches tickets advanced/closed by
-    // humans or label changes between cycles).
+    // Maintenance: closed-sweep, route rework labels, auto-advance, and
+    // strip pipeline labels off Done tickets. Runs even when nothing was
+    // dispatched (catches tickets advanced/closed by humans or label
+    // changes between cycles).
     await runClosedSweep(client);
     await runReworkRouting(client);
     await runAutoAdvance(client);
+    await runDoneCleanup(client);
 
     // Auto-merge PRs for tickets in the Done column
     try {

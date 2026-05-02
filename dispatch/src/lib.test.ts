@@ -33,6 +33,7 @@ import {
   isPipelineInFlight,
   decideAutoAdvance,
   decideReworkRoutes,
+  decideDoneCleanup,
   shouldAutoCommit,
   shouldUseWorktree,
   hasOpenBlockers,
@@ -755,6 +756,152 @@ describe("decideReworkRoutes", () => {
     assert.equal(r.length, 1);
     assert.equal(r[0].triggerLabel, "needs-rework:developer");
     assert.equal(r[0].toColumn, "In Development");
+  });
+});
+
+describe("decideDoneCleanup", () => {
+  type Item = { id: string; issueNumber: number; labels: string[] };
+
+  test("empty Done column → no cleanups", () => {
+    const c = decideDoneCleanup([]);
+    assert.deepEqual(c, []);
+  });
+
+  test("ticket with ready:documentation → strip it", () => {
+    // The reported bug: ready:documentation persists on tickets that flow
+    // into Done via runAutoAdvance. The auto-merge path strips pipeline
+    // labels, but only when a PR exists. Doc-only tickets, manually-merged
+    // PRs, and closed-as-won't-fix never get cleaned without this pass.
+    const items: Item[] = [{
+      id: "i1",
+      issueNumber: 21,
+      labels: ["ready:documentation"],
+    }];
+    const c = decideDoneCleanup(items);
+    assert.equal(c.length, 1);
+    assert.equal(c[0].itemId, "i1");
+    assert.equal(c[0].issueNumber, 21);
+    assert.deepEqual(c[0].labelsToStrip, ["ready:documentation"]);
+  });
+
+  test("accumulated ready:* labels from full pipeline run → strip all", () => {
+    // A ticket that flowed through every agent accumulates a ready:<agent>
+    // for each. None get stripped between columns. Lock in that all five
+    // come off when the ticket reaches Done.
+    const items: Item[] = [{
+      id: "i1",
+      issueNumber: 21,
+      labels: [
+        "ready:po",
+        "ready:architect",
+        "ready:developer",
+        "ready:code-review",
+        "ready:documentation",
+      ],
+    }];
+    const c = decideDoneCleanup(items);
+    assert.equal(c.length, 1);
+    const stripped = new Set(c[0].labelsToStrip);
+    assert.ok(stripped.has("ready:po"));
+    assert.ok(stripped.has("ready:architect"));
+    assert.ok(stripped.has("ready:developer"));
+    assert.ok(stripped.has("ready:code-review"));
+    assert.ok(stripped.has("ready:documentation"));
+    assert.equal(c[0].labelsToStrip.length, 5);
+  });
+
+  test("non-pipeline labels (size:, priority:, custom tags) survive", () => {
+    // The cleanup is targeted at pipeline-state labels only. PO sizing,
+    // priority, and any free-form tags (release notes, area:, etc.) must
+    // not be touched.
+    const items: Item[] = [{
+      id: "i1",
+      issueNumber: 21,
+      labels: ["ready:documentation", "size:s", "priority:normal", "area:dispatcher"],
+    }];
+    const c = decideDoneCleanup(items);
+    assert.equal(c.length, 1);
+    assert.deepEqual(c[0].labelsToStrip, ["ready:documentation"]);
+  });
+
+  test("wip:/error:/needs-rework: also stripped on Done", () => {
+    // A ticket can reach Done via the closed-sweep path (e.g. user
+    // closes a won't-fix while it had wip:developer set, or the ticket
+    // had needs-rework:po set when it got closed manually). These are
+    // pipeline state, same family as ready:*, and need cleanup too.
+    const items: Item[] = [{
+      id: "i1",
+      issueNumber: 21,
+      labels: ["wip:developer", "error:architect", "needs-rework:po", "size:s"],
+    }];
+    const c = decideDoneCleanup(items);
+    assert.equal(c.length, 1);
+    const stripped = new Set(c[0].labelsToStrip);
+    assert.ok(stripped.has("wip:developer"));
+    assert.ok(stripped.has("error:architect"));
+    assert.ok(stripped.has("needs-rework:po"));
+    assert.ok(!stripped.has("size:s"));
+  });
+
+  test("rework-count:N is stripped along with pipeline labels", () => {
+    // rework-count: isn't in PIPELINE_LABEL_PREFIXES (it's a counter,
+    // not a state label), but it IS pipeline state. Cleaning it on Done
+    // means the counter resets if the ticket ever re-opens — otherwise a
+    // re-opened ticket would carry stale rework-count and could trip
+    // REWORK_LOOP_THRESHOLD prematurely.
+    const items: Item[] = [{
+      id: "i1",
+      issueNumber: 21,
+      labels: ["ready:documentation", "rework-count:2"],
+    }];
+    const c = decideDoneCleanup(items);
+    assert.equal(c.length, 1);
+    const stripped = new Set(c[0].labelsToStrip);
+    assert.ok(stripped.has("ready:documentation"));
+    assert.ok(stripped.has("rework-count:2"));
+  });
+
+  test("idempotent: ticket with no pipeline labels → no cleanup entry", () => {
+    // Cleanup runs every poll cycle; the second run on a ticket already
+    // cleaned in cycle 1 must be a no-op (no entry in the result), not a
+    // wasted GraphQL removeLabel call. Caller iterates over the result;
+    // empty result == zero work.
+    const items: Item[] = [{
+      id: "i1",
+      issueNumber: 21,
+      labels: ["size:s", "priority:normal"],
+    }];
+    const c = decideDoneCleanup(items);
+    assert.deepEqual(c, []);
+  });
+
+  test("multiple Done items handled independently", () => {
+    // Done holds many tickets over time. Cleanup must scan each
+    // independently and emit one entry per ticket that needs work.
+    const items: Item[] = [
+      { id: "i1", issueNumber: 21, labels: ["ready:documentation"] },
+      { id: "i2", issueNumber: 22, labels: ["size:s"] }, // already clean
+      { id: "i3", issueNumber: 23, labels: ["wip:developer", "rework-count:1"] },
+    ];
+    const c = decideDoneCleanup(items);
+    assert.equal(c.length, 2);
+    const byNumber = new Map(c.map(e => [e.issueNumber, e]));
+    assert.deepEqual(byNumber.get(21)!.labelsToStrip, ["ready:documentation"]);
+    const stripped3 = new Set(byNumber.get(23)!.labelsToStrip);
+    assert.ok(stripped3.has("wip:developer"));
+    assert.ok(stripped3.has("rework-count:1"));
+  });
+
+  test("non-issue items (issueNumber <= 0) skip", () => {
+    // Mirrors decideReworkRoutes — epics or virtual items with
+    // issueNumber <= 0 don't have a real GitHub issue to label-edit.
+    const items: Item[] = [{
+      id: "i0",
+      issueNumber: 0,
+      labels: ["ready:documentation"],
+    }];
+    const c = decideDoneCleanup(items);
+    assert.deepEqual(c, []);
   });
 });
 

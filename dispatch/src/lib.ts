@@ -316,6 +316,80 @@ export function decideReworkRoutes(
   return routes;
 }
 
+// --------- Done-column cleanup decision ---------
+
+/** A single ticket's worth of pipeline-state cleanup on entering Done. */
+export interface DoneCleanup {
+  itemId: string;
+  issueNumber: number;
+  /** Pipeline-state labels to remove. Always non-empty (clean tickets
+   *  produce no entry in the result array). */
+  labelsToStrip: string[];
+}
+
+/**
+ * Pure decision function for `runDoneCleanup`. Given the items currently
+ * in the Done column, return one cleanup entry per ticket that still
+ * carries pipeline-state labels.
+ *
+ * The bug this fixes: `runAutoAdvance` moves tickets between columns by
+ * `updateItemStatus` only — it doesn't strip the `ready:<agent>` labels
+ * that drove each advance. So a ticket that flowed through every agent
+ * arrives in Done carrying every `ready:*` from the trail. The auto-merge
+ * path strips pipeline labels, but only after `gh pr merge` succeeds —
+ * doc-only tickets, manually-merged PRs, and closed-as-won't-fix never
+ * get cleaned. `runClosedSweep` (which moves closed-but-not-Done tickets
+ * to Done) also doesn't strip. This pass closes the gap.
+ *
+ * Symmetric in spirit with `decideReworkRoutes`: rework routing returns
+ * `labelsToStrip` for backward column moves; this returns `labelsToStrip`
+ * for the terminal column. The asymmetry between auto-advance (no strip)
+ * and rework (strip) was the root cause; cleanup here re-establishes the
+ * invariant that no ticket sits in a final-state column with stale
+ * pipeline labels.
+ *
+ * Strips:
+ *   - any `ready:`/`wip:`/`error:`/`needs-rework:` label (`isPipelineLabel`)
+ *   - any `rework-count:N` label (counter — reset so a re-opened ticket
+ *     starts fresh rather than carrying stale rounds toward the loop
+ *     threshold)
+ *
+ * Does NOT touch:
+ *   - `size:`, `priority:`, `merged`, or any free-form tag
+ *   - the `merged` label specifically — its semantic is "PR was merged,"
+ *     set only by the auto-merge path; reaching Done some other way
+ *     shouldn't grant it
+ *
+ * Skips items with `issueNumber <= 0` (epics, virtual items) — same as
+ * `decideReworkRoutes`. Idempotent: a clean ticket produces no entry.
+ *
+ * Pure function over already-collected items; the caller does the I/O
+ * (label removals).
+ */
+export function decideDoneCleanup(
+  doneItems: readonly DecisionItem[],
+): DoneCleanup[] {
+  const cleanups: DoneCleanup[] = [];
+
+  for (const item of doneItems) {
+    if (item.issueNumber <= 0) continue;
+
+    const labelsToStrip = item.labels.filter(
+      l => isPipelineLabel(l) || l.startsWith("rework-count:"),
+    );
+
+    if (labelsToStrip.length === 0) continue;
+
+    cleanups.push({
+      itemId: item.id,
+      issueNumber: item.issueNumber,
+      labelsToStrip,
+    });
+  }
+
+  return cleanups;
+}
+
 // --------- Per-agent dispatch policy ---------
 
 /**
