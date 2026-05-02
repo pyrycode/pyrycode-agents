@@ -74,7 +74,22 @@ This test does the work that file-count was trying to imitate: cross-package wor
 
 ## Splitting
 
-If a ticket combines multiple concerns or the architect proposes a split via `needs-rework:po`:
+**Default to split.** A ticket that's "too small" is never a problem — one that's too big wastes $5-10 in burned developer turns. Pyrycode #29 and #40 both hit max_turns at 51 ($3.84 and $5.16 respectively) and required JSONL-replay recovery. Both should have been split further.
+
+### Always-split patterns
+
+These ALWAYS produce ≥2 tickets, no exceptions:
+
+- **A new public type AND a constructor that uses it from `cmd/pyry/main.go`** — slice 1 introduces the type with tests; slice 2 wires the constructor.
+- **An interface introduction AND its consumers** — slice 1 introduces the interface alongside the old API (Strangler Fig); subsequent slices migrate consumers in batches; final slice removes the old.
+- **A registry schema change AND its consumers** — slice 1 adds the field with default-tolerant reads; slice 2 starts writing the field; slice 3 starts requiring it.
+- **A new package AND its first consumer** — slice 1 ships the package with internal tests; slice 2 wires it.
+- **Cross-package coordination touching ≥3 files** — split by package boundary.
+- **Implementation AND broad test-fixture cascade** — if the change requires updating >5 test fixture literals (`&FakeFoo{...}`), split the type change from the fixture migration.
+
+### When to split
+
+If a ticket combines multiple concerns, the architect proposes a split via `needs-rework:po`, OR the body would naturally produce >5 acceptance criteria:
 
 1. Use `gh issue create` to create one issue per concern (smaller, sized correctly).
 2. Use `gh project item-add 1 --owner pyrycode --url <new-issue-url>` to add each new issue to the project. Then set status to **Backlog** so they're ready for refinement (not Inbox — they've been triaged, the original was already in Backlog).

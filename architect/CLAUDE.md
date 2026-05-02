@@ -36,21 +36,27 @@ If yes, count consumer call sites concretely from your worktree:
 grep -rn <symbol> internal/ cmd/
 ```
 
-Sizing rules with edit fan-out (use the larger bucket of line-count vs fan-out):
+Sizing rule with edit fan-out:
 
 - **≤ ~10 call sites** — size by line count as usual
-- **10–20 call sites** — bump up one bucket (S → M with a "Why M" justification noting the fan-out)
-- **> 20 call sites** — split. The Strangler Fig pattern (introduce new alongside old → migrate consumers → remove old) typically slices cleanly into 2–3 children, each with bounded edit cost.
+- **> 10 call sites** — split. The Strangler Fig pattern (introduce new alongside old → migrate consumers → remove old) typically slices cleanly into 2–3 children, each with bounded edit cost.
 
 Pyrycode #29 (interface rename across 5 test files, ~35 net production lines, ~30+ Edit operations) sized at S by lines but hit the 50-turn budget. The call-site count was the binding constraint, not the line count.
 
 PO has already sized the ticket. You can override that size in either direction.
 
-**If you'll size at S (≤100 lines):** proceed to spec writing.
+**If you'll size at S (≤100 lines, ≤3 files, ≤5 new exported types):** proceed to spec writing.
 
-**If you'll size at M (≤150 lines):** proceed to spec writing. The spec MUST include a one-paragraph **"Why M, not split"** section naming the seam you considered and why splitting there would produce incoherent slices. M is the ceiling — never go higher.
+**If your design hits ANY of these red lines, STOP and split** (do not write a spec):
+- More than 3 new files
+- More than ~150 lines of production code
+- More than 5 new exported types or interfaces
+- More than 10 consumer call sites needing simultaneous updates (the edit fan-out check above)
+- More than 5 acceptance criteria worth of work
 
-**If the work clearly exceeds M:** **do NOT write a spec.** Splitting is your exclusive call — it requires knowing the seams, which you've just sketched. Write the split proposal as a comment on the ticket and add `needs-rework:po`:
+These are quantitative — no judgment call, no "Why M, not split" escape. Any one hit → split. The framing: **a ticket that's "too small" is never a problem; one that's too big wastes $5-10 in burned developer turns.** Pyrycode #29 (interface refactor cascade) and #40 (state-machine + tests) both hit max_turns at exactly 51 turns; both would have been caught by these red lines if the architect had applied them.
+
+To split, write the split proposal as a comment on the ticket and add `needs-rework:po`:
 
 > **Oversized — split as follows:**
 > - **A:** [first slice — what behaviour, what interfaces it introduces]
@@ -74,7 +80,6 @@ Each spec should include:
 - **Error handling** — failure modes and recovery strategies
 - **Testing strategy** — how to verify the design works
 - **Open questions** — things that need resolution during implementation
-- **Why M, not split** — only if sizing M
 
 **You MUST commit your spec.** The dispatcher cleans up your worktree with `git worktree remove --force` after your run. Anything not committed is silently destroyed (this happened on #27, lost the spec). Do this as the last step before signalling completion:
 
@@ -96,7 +101,7 @@ The dispatcher pushes your branch automatically after your run completes — you
 
 Specs cost real tokens. If the work splits, the parent's spec gets thrown away — each child gets its own architect run and its own spec. Writing a spec you'll throw away is waste; writing one whose decisions can't flow downstream is worse (encourages cross-branch reads or stale references). Sketch first, spec only if it ships as one ticket.
 
-The developer agent runs with a turn budget (~50 turns). M-sized tickets that cross packages have hit that budget historically (KitchenClaw #72/#73). Architect-driven splitting is informed where PO-driven splitting is a guess — but only because you've sketched the seams, not because you wrote the full spec. The sketch is the work; the spec is the artifact.
+The developer agent runs with a turn budget (~50 turns). Tickets that cross packages or have edit fan-out have historically hit that budget (KitchenClaw #72/#73; Pyrycode #29 and #40). Architect-driven splitting is informed where PO-driven splitting is a guess — but only because you've sketched the seams, not because you wrote the full spec. The sketch is the work; the spec is the artifact.
 
 ## Go Architecture Patterns
 
