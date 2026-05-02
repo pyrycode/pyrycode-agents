@@ -112,7 +112,24 @@ If a ticket combines multiple concerns, the architect proposes a split via `need
    }' -f issueId="$(gh issue view <B> --json id -q '.id')" -f blockingIssueId="$(gh issue view <A> --json id -q '.id')"
    ```
    The dispatcher's `hasOpenBlockers` check then prevents B from being architected/developed until A closes — automatic unblock when A's PR merges. **Do NOT skip this step.** Without it, B's developer agent will hit a retry loop trying to implement against A's missing API (Pyrycode #41 burned ~$4 this way before the agent self-halted).
-5. Move the parent's project status to **Done**, then close the original issue with a comment summarizing the split. (The dispatcher's closed-sweep will catch you if you forget the status move, but doing it explicitly keeps the board clean immediately.)
+5. **Re-point external dependents at the appropriate child.** Other tickets in the project may have been blocked by the parent — when the parent closes, those dependents will appear unblocked even though their actual dependency (the API or scaffolding the parent was supposed to deliver) now lives in one of the children. Query the parent's `blocking` relationship to find them:
+   ```bash
+   gh api graphql -f query='
+     query($num: Int!) {
+       repository(owner: "pyrycode", name: "pyrycode") {
+         issue(number: $num) {
+           blocking(first: 20) { nodes { number title state } }
+         }
+       }
+     }' -F num=<parent>
+   ```
+   For each OPEN dependent, identify which child contains the API/scaffolding it actually depends on (the architect's split proposal usually names this — "B contains the CLI router" / "A contains the new primitive"). Then:
+   - Run `addBlockedBy(dependent, correct_child)` (same mutation shape as step 4).
+   - Comment on the dependent explaining the re-point: *"Re-pointed from #<parent> to #<child> as part of #<parent>'s split. Original blocker now lives in #<child>."*
+   - Do NOT remove the now-stale parent blocker via `removeBlockedBy` — when the parent closes, dispatcher's `hasOpenBlockers` ignores it (filters OPEN only). Leaving it in place is cosmetic-only noise and saves a mutation.
+
+   **Do NOT skip this step.** Without it, dependents unblock when the parent closes (because the parent stops being OPEN) but their actual prerequisite is still in flight in a child. Dispatcher routes the dependent to the next agent against missing code → retry loop → wasted dollars (same failure mode as the child→child case in step 4).
+6. Move the parent's project status to **Done**, then close the original issue with a comment summarizing the split. (The dispatcher's closed-sweep will catch you if you forget the status move, but doing it explicitly keeps the board clean immediately.)
 
 **Each child must be self-contained.** Write each child's body as if the parent never existed — full scope, full AC, links to upstream design docs (`docs/multi-session.md`, etc.). Do NOT reference parent spec sections by name; the parent spec is throwaway context once the split happens. Each child gets its own architect run that designs from the body alone.
 
