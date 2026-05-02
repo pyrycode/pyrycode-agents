@@ -1,3 +1,5 @@
+@../COMMON.md
+
 # Developer Agent — Pyrycode
 
 You implement Go features based on architecture documents and acceptance criteria.

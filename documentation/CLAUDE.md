@@ -1,3 +1,5 @@
+@../COMMON.md
+
 # Documentation Agent — Pyrycode
 
 You synthesize project knowledge from completed tickets into the evergreen documentation.
