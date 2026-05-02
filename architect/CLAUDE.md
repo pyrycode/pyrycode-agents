@@ -69,6 +69,47 @@ Then stop. Don't write a spec for the parent — it would be thrown away.
 
 **Do not Write any files when splitting.** The split proposal goes in the GitHub issue comment, not as a file on disk. Your worktree should be untouched at the end of a split run. The dispatcher's safety-net auto-commit is unconditional inside any worktree — if you Write scratch notes or draft files during sketching, they get committed to `feature/<ticket>` and pushed to origin, leaving stale junk on the branch.
 
+### 1.5. File-overlap check (always, even on size-S tickets)
+
+After the size check passes, before writing the spec, identify which files your design will touch. Then check whether any other open PR or in-flight feature branch also touches them. **Overlapping changes to the same file produce merge conflicts at integration time.** WIP=1 doesn't prevent this — feature branches are created at architect time and merged at code-review time, with hours in between during which other PRs land.
+
+**Concrete check:**
+
+```bash
+# Files your design will touch (from the sketch — you have these in your head)
+FILES=("internal/sessions/pool.go" "internal/sessions/pool_test.go" "cmd/pyry/main.go")
+
+# For each open PR, list files it touches; flag overlaps
+for pr in $(gh pr list --state open --json number -q '.[].number'); do
+  pr_files=$(gh pr view "$pr" --json files -q '.files[].path')
+  for f in "${FILES[@]}"; do
+    if echo "$pr_files" | grep -q "^$f$"; then
+      pr_issue=$(gh pr view "$pr" --json closingIssuesReferences -q '.closingIssuesReferences[0].number')
+      echo "Overlap: PR #$pr closes #$pr_issue, touches $f"
+    fi
+  done
+done
+```
+
+**If any overlap is found:**
+
+1. For each conflicting issue, set `addBlockedBy(<this-ticket>, <conflicting-issue>)` via:
+   ```bash
+   gh api graphql -f query='mutation($issueId: ID!, $blockingIssueId: ID!) {
+     addBlockedBy(input: { issueId: $issueId, blockingIssueId: $blockingIssueId }) {
+       issue { number }
+     }
+   }' -f issueId="$(gh issue view <THIS> --json id -q '.id')" \
+      -f blockingIssueId="$(gh issue view <CONFLICTING> --json id -q '.id')"
+   ```
+2. Post a comment on this ticket: *"Blocked by #N: overlapping changes to <file>. Will write the spec once #N lands."*
+3. Add `needs-rework:po` to route the ticket back to Backlog. **Do NOT write the spec.** Your worktree should be untouched.
+4. Stop.
+
+When the blocker closes, `blockedBy` flips to CLOSED, the ticket auto-advances from Backlog → In Architecture again, and you re-run with the now-merged code on main as your starting point. No stale-branch merge conflict — your feature branch will be created from current main when the developer runs.
+
+**Why this matters:** Pyrycode #40 hit this exact failure. No logical dependency on #38 or #39, but all three modified `internal/sessions/pool_test.go`. #38 + #39 merged while #40 was being recovered; `git merge main` in #40's code-review worktree conflicted because both branches added test functions in the same region. ~30 min of manual merge resolution. A 10-second `gh pr list --json files` check at architect time would have set the block, deferred #40 until #38 + #39 landed, and made the conflict structurally impossible.
+
 ### 2. Spec writing (only if not splitting)
 
 Write the architecture spec to `docs/specs/architecture/{ticket}-{name}.md`.
