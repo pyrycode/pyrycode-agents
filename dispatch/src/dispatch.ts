@@ -25,6 +25,7 @@ import {
   shouldSkipBlockedFor,
   extractReworkCount,
   REWORK_LOOP_THRESHOLD,
+  maxTurnsFor,
 } from "./lib.js";
 
 // Load .env from agents repo root (where dispatch lives).
@@ -476,10 +477,10 @@ async function dispatchToAgent(
   writeFileSync(promptFile, prompt);
   writeFileSync(systemPromptFile, systemPrompt);
 
-  // Turn limits: code-review gets 100 (runs sub-agents), everyone else gets 50.
-  // If a developer can't finish in 50 turns, the ticket is too big — fail fast.
+  // Turn limits: see `maxTurnsFor` in lib.ts for rationale (base 60,
+  // code-review 100). Bumped from 50 → 60 on 2026-05-02 after #55.
+  const maxTurns = maxTurnsFor(agent);
   const isCodeReview = agent.name === "code-review";
-  const maxTurns = isCodeReview ? 100 : 50;
 
   // Tool access per agent role
   const baseTools = "Bash,Read,Write,Edit,Glob,Grep,TodoWrite,mcp__qmd__query,mcp__qmd__get,mcp__qmd__multi_get,mcp__qmd__status,mcp__context7__resolve-library-id,mcp__context7__query-docs";

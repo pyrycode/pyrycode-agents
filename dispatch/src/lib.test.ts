@@ -41,6 +41,7 @@ import {
   extractReworkCount,
   REWORK_LOOP_THRESHOLD,
   findAdvanceRule,
+  maxTurnsFor,
 } from "./lib.js";
 
 describe("resolveAgentsRepoRoot", () => {
@@ -1071,6 +1072,48 @@ describe("shouldUseWorktree", () => {
         `${agent.name} must declare usesWorktree`,
       );
     }
+  });
+});
+
+describe("maxTurnsFor", () => {
+  // Code review runs sub-agents (each consumes turns from the parent
+  // budget) and routinely needs the headroom; everyone else gets the
+  // base budget. The base bumped from 50 → 60 on 2026-05-02 after #55
+  // (and several earlier tickets) hit the 50 cap. Distribution data:
+  // 7+ tickets clustered AT 50 turns over the prior 48h, indicating the
+  // cap was binding regularly (not just rare clipping). Combined with
+  // the architect-spec "Files to read first" rule, 60 should keep the
+  // forcing function while reclaiming the long tail of cap-hitters.
+  test("code-review gets 100 (runs sub-agents)", () => {
+    const cr = AGENTS.find(a => a.name === "code-review")!;
+    assert.equal(maxTurnsFor(cr), 100);
+  });
+
+  test("developer gets 60 (was 50 — bumped 2026-05-02 after #55)", () => {
+    const dev = AGENTS.find(a => a.name === "developer")!;
+    assert.equal(maxTurnsFor(dev), 60);
+  });
+
+  test("architect gets 60 (base budget — sketch + spec)", () => {
+    const arch = AGENTS.find(a => a.name === "architect")!;
+    assert.equal(maxTurnsFor(arch), 60);
+  });
+
+  test("po gets 60 (base budget — issue body refinement)", () => {
+    const po = AGENTS.find(a => a.name === "po")!;
+    assert.equal(maxTurnsFor(po), 60);
+  });
+
+  test("documentation gets 60 (base budget — knowledge base writes)", () => {
+    const docs = AGENTS.find(a => a.name === "documentation")!;
+    assert.equal(maxTurnsFor(docs), 60);
+  });
+
+  test("unknown agent name still gets the base budget (no implicit zero)", () => {
+    // Defensive: a typo or new agent shouldn't silently dispatch with
+    // 0 turns. The policy returns the base budget for any non-code-review
+    // name; if a future agent needs more, it must be added explicitly.
+    assert.equal(maxTurnsFor({ name: "ghost", column: "", claudeMdPath: "", description: "", usesWorktree: false }), 60);
   });
 });
 

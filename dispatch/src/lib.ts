@@ -411,6 +411,33 @@ export function shouldUseWorktree(agent: AgentConfig): boolean {
   return agent.usesWorktree;
 }
 
+/**
+ * The `claude --max-turns` budget for this agent's run.
+ *
+ * Code review gets 100 because it dispatches sub-agents (the parent
+ * turn budget covers all child invocations). Everyone else gets the
+ * base budget.
+ *
+ * **Base budget bumped 50 → 60 on 2026-05-02** after #55 hit the 50
+ * cap on an S-sized e2e ticket. Distribution analysis over the prior
+ * 48h: 7+ tickets clustered exactly AT 50 turns (some shipped, some
+ * errored), indicating the cap was binding regularly rather than rare
+ * clipping. Pure code-output tickets typically land 30–45 turns; e2e
+ * and refactor-shaped work was the long tail crossing 50. Combined
+ * with the architect-spec "Files to read first" rule (which removes
+ * ~20 turns of redundant exploration), 60 should be enough headroom
+ * to ship the long tail while keeping the forcing function intact.
+ *
+ * Re-evaluate after ~10 dispatched runs at the new budget. If tickets
+ * shift down to a comfortable 40-turn median, hold here. If they keep
+ * cresting at 60, raise again or differentiate by size class
+ * (XS=30, S=60, e2e/refactor=80).
+ */
+export function maxTurnsFor(agent: AgentConfig): number {
+  if (agent.name === "code-review") return 100;
+  return 60;
+}
+
 // --------- Issue dependencies ---------
 
 /**
