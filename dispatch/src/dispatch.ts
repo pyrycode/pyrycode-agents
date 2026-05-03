@@ -617,8 +617,17 @@ async function dispatchToAgent(
     try {
       execSync(`qmd update 2>&1 && qmd embed 2>&1`, { cwd: agentCwd, encoding: "utf-8", timeout: 120_000 });
       console.log(`   📚 QMD index updated`);
-    } catch (e) {
-      console.warn(`   ⚠️  QMD re-index failed (agents will use stale index): ${e}`);
+    } catch (e: any) {
+      // execSync attaches captured stdout/stderr to the thrown error.
+      // The previous catch only stringified `e` (Error message only) —
+      // qmd's actual failure message was hidden, leaving us guessing.
+      // Surface both so the next failure produces actionable diagnostic
+      // data (qmd's own error text, not just "Command failed: qmd...").
+      const stdout = e.stdout?.toString().trim() ?? "";
+      const stderr = e.stderr?.toString().trim() ?? "";
+      const detail = [stderr, stdout].filter(s => s.length > 0).join("\n");
+      const indented = detail ? "\n      " + detail.split("\n").join("\n      ") : "";
+      console.warn(`   ⚠️  QMD re-index failed (agents will use stale index): ${e.message}${indented}`);
     }
   }
 
