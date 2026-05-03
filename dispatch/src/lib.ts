@@ -418,24 +418,31 @@ export function shouldUseWorktree(agent: AgentConfig): boolean {
  * turn budget covers all child invocations). Everyone else gets the
  * base budget.
  *
- * **Base budget bumped 50 → 60 on 2026-05-02** after #55 hit the 50
- * cap on an S-sized e2e ticket. Distribution analysis over the prior
- * 48h: 7+ tickets clustered exactly AT 50 turns (some shipped, some
- * errored), indicating the cap was binding regularly rather than rare
- * clipping. Pure code-output tickets typically land 30–45 turns; e2e
- * and refactor-shaped work was the long tail crossing 50. Combined
- * with the architect-spec "Files to read first" rule (which removes
- * ~20 turns of redundant exploration), 60 should be enough headroom
- * to ship the long tail while keeping the forcing function intact.
+ * **Base budget bumped 60 → 70 on 2026-05-03 (later afternoon)** after
+ * three Mode-E max_turns events in one session (#128, #75, #99) all
+ * hit at exactly turn 60-61, all caught merge-ready by safer-salvage,
+ * all in the housekeeping phase (commit/docs polish/PROJECT-MEMORY
+ * edit/qmd re-index). Pattern: implementation + tests landed cleanly,
+ * cap hit during cleanup. The salvage backstop preserved the work in
+ * each case ($4.74-$6.68 each), but draft-PR-then-mark-ready is
+ * higher-friction than just shipping. 10 more turns covers the
+ * housekeeping tail without weakening the forcing function.
  *
- * Re-evaluate after ~10 dispatched runs at the new budget. If tickets
- * shift down to a comfortable 40-turn median, hold here. If they keep
- * cresting at 60, raise again or differentiate by size class
- * (XS=30, S=60, e2e/refactor=80).
+ * **Earlier history:** Base budget bumped 50 → 60 on 2026-05-02
+ * after #55 hit the 50 cap on an S-sized e2e ticket. Distribution
+ * analysis at the time: 7+ tickets clustered exactly AT 50 turns,
+ * indicating the cap was binding. Combined with the architect-spec
+ * "Files to read first" rule, 60 reclaimed most of the long tail.
+ *
+ * Re-evaluate after ~10 dispatched runs at 70. If Mode E recurs at
+ * 70-71, the right move is per-size differentiation (XS=40, S=70,
+ * e2e/refactor=90) rather than another flat bump — the Mode-E cluster
+ * suggests housekeeping cost is roughly fixed regardless of impl size,
+ * so smaller tickets are over-budgeted at the flat rate.
  */
 export function maxTurnsFor(agent: AgentConfig): number {
   if (agent.name === "code-review") return 100;
-  return 60;
+  return 70;
 }
 
 // --------- Safer max_turns salvage ---------

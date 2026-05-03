@@ -644,8 +644,9 @@ async function dispatchToAgent(
   writeFileSync(promptFile, prompt);
   writeFileSync(systemPromptFile, systemPrompt);
 
-  // Turn limits: see `maxTurnsFor` in lib.ts for rationale (base 60,
-  // code-review 100). Bumped from 50 → 60 on 2026-05-02 after #55.
+  // Turn limits: see `maxTurnsFor` in lib.ts for rationale (base 70,
+  // code-review 100). Bumped 60 → 70 on 2026-05-03 after Mode-E cluster
+  // (#128, #75, #99) hit at turn 60-61 in the housekeeping phase.
   const maxTurns = maxTurnsFor(agent);
   const isCodeReview = agent.name === "code-review";
 
