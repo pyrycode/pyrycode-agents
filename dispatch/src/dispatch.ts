@@ -26,6 +26,7 @@ import {
   extractReworkCount,
   REWORK_LOOP_THRESHOLD,
   maxTurnsFor,
+  shouldAttemptSafeSalvage,
 } from "./lib.js";
 
 // Load .env from agents repo root (where dispatch lives).
@@ -339,6 +340,114 @@ async function buildPromptForAgent(
   return parts.join("\n");
 }
 
+/**
+ * Run the safer-salvage path on a max_turns failure: gate on clean
+ * vet/build + uncommitted changes (via `shouldAttemptSafeSalvage`),
+ * then commit the work, push, open a DRAFT PR, label the ticket
+ * `error:max_turns_salvaged`, and post a triage comment.
+ *
+ * Returns true if salvage was performed (caller should skip the
+ * normal error path AND the success-path labeling); false otherwise
+ * (caller falls through to the throw, agent gets `error:<name>`).
+ *
+ * Distinct from the existing PR-already-exists salvage that lives
+ * inline in dispatchToAgent. That one fires when the agent finished
+ * the work and ran out of turns on PR-creation cleanup; this one
+ * fires when the agent stopped mid-work but has buildable code.
+ */
+async function attemptSaferSalvage(opts: {
+  agentCwd: string;
+  branchName: string;
+  agent: AgentConfig;
+  item: ProjectItem;
+  streamResult: StreamResult;
+  client: GitHubProjectClient;
+  logFile: string;
+}): Promise<boolean> {
+  try {
+    const dirty = execSync(`git status --porcelain`, {
+      cwd: opts.agentCwd, encoding: "utf-8", timeout: 15_000,
+    }).toString();
+
+    let vetExitCode = 0;
+    try { execSync(`go vet ./...`, { cwd: opts.agentCwd, stdio: "pipe", timeout: 60_000 }); }
+    catch (e: any) { vetExitCode = typeof e.status === "number" ? e.status : 1; }
+
+    let buildExitCode = 0;
+    try { execSync(`go build ./...`, { cwd: opts.agentCwd, stdio: "pipe", timeout: 120_000 }); }
+    catch (e: any) { buildExitCode = typeof e.status === "number" ? e.status : 1; }
+
+    if (!shouldAttemptSafeSalvage({
+      terminalReason: opts.streamResult.terminalReason || "",
+      prAlreadyExists: false,
+      gitStatusOutput: dirty,
+      vetExitCode,
+      buildExitCode,
+    })) {
+      writeLog(opts.logFile, "SAFER_SALVAGE_SKIPPED",
+        `gates: vet=${vetExitCode} build=${buildExitCode} dirty=${dirty.trim().length > 0}`);
+      return false;
+    }
+
+    execSync(`git add -A`, { cwd: opts.agentCwd, stdio: "pipe", timeout: 15_000 });
+    execSync(
+      `git commit -m "WIP: max_turns salvage for #${opts.item.issueNumber}" -m "Auto-committed by dispatcher when ${opts.agent.name} hit max_turns. Build was clean (vet + build); work preserved as draft PR for human triage." -m "Session: ${opts.streamResult.sessionId}"`,
+      { cwd: opts.agentCwd, stdio: "pipe", timeout: 15_000 },
+    );
+    execSync(`git push -u origin ${opts.branchName}`, {
+      cwd: opts.agentCwd, stdio: "pipe", timeout: 30_000,
+    });
+
+    const tail = (opts.streamResult.output || "").slice(-2500);
+    const prBody = [
+      `## Auto-salvaged from \`max_turns\``,
+      ``,
+      `The **${opts.agent.name}** agent hit \`max_turns\` (${opts.streamResult.numTurns} turns, $${opts.streamResult.totalCostUsd.toFixed(2)}) on #${opts.item.issueNumber} while work was in progress. The dispatcher auto-committed the uncommitted changes and opened this **draft** PR for human triage.`,
+      ``,
+      `**Build status at salvage:** clean (\`go vet\` + \`go build\` both passed). Tests were not run as a salvage gate — failing tests are often the signal the agent was chasing.`,
+      ``,
+      `**Last messages from the agent (may include unresolved findings):**`,
+      ``,
+      `\`\`\``,
+      tail,
+      `\`\`\``,
+      ``,
+      `**To investigate:**`,
+      `- Resume the session: \`claude --resume ${opts.streamResult.sessionId}\``,
+      `- Branch: \`${opts.branchName}\``,
+      `- Issue: ${opts.item.url}`,
+      ``,
+      `This PR is a **draft** — auto-merge is disabled until a reviewer marks it ready (or closes it). Ticket label \`error:max_turns_salvaged\` indicates triage required.`,
+    ].join("\n");
+
+    execSync(
+      `gh pr create --draft --title "[max_turns] ${opts.item.title.replace(/"/g, '\\"')}" --head "${opts.branchName}" --base main --body-file -`,
+      { cwd: opts.agentCwd, stdio: ["pipe", "pipe", "pipe"], input: prBody, timeout: 30_000 },
+    );
+
+    try { await opts.client.addLabel(opts.item.issueNumber, "error:max_turns_salvaged"); }
+    catch (e) { console.warn(`   ⚠️  Failed to add error:max_turns_salvaged label: ${e}`); }
+
+    try {
+      await opts.client.addComment(
+        opts.item.issueNumber,
+        `## ⚠️ Salvaged from \`max_turns\`\n\nThe ${opts.agent.name} agent hit max_turns at ${opts.streamResult.numTurns} turns ($${opts.streamResult.totalCostUsd.toFixed(2)}) but had clean uncommitted work. The dispatcher auto-committed the changes and opened a draft PR for human triage.\n\nLabel \`error:max_turns_salvaged\` is set; the ticket does **not** auto-advance.\n\n**Reviewer:** check the draft PR — decide whether to fix-and-promote (mark ready), recover via JSONL replay, or close as wontfix.`,
+      );
+    } catch (e) { console.warn(`   ⚠️  Failed to post salvage comment: ${e}`); }
+
+    writeLog(opts.logFile, "SAFER_SALVAGE",
+      `Committed + pushed + draft PR opened for #${opts.item.issueNumber} (${opts.streamResult.numTurns} turns, $${opts.streamResult.totalCostUsd.toFixed(2)})`);
+    console.log(`   💾 Safer salvage: draft PR opened for #${opts.item.issueNumber}, label error:max_turns_salvaged set`);
+
+    await notifyDiscord(`💾 **${opts.agent.name}** salvaged on #${opts.item.issueNumber}: ${opts.item.title}\n${opts.item.url}\nDraft PR opened — needs human triage.`);
+    return true;
+  } catch (e) {
+    console.warn(`   ⚠️  Safer salvage attempt failed: ${e}`);
+    writeLog(opts.logFile, "SAFER_SALVAGE_FAILED", String(e));
+    return false;
+  }
+}
+
 async function dispatchToAgent(
   agent: AgentConfig,
   item: ProjectItem,
@@ -503,6 +612,11 @@ async function dispatchToAgent(
 
   // Stream result is stored outside try so the catch handler can access session_id
   let streamResult: StreamResult | null = null;
+  // True after `attemptSaferSalvage` completed successfully — the
+  // ticket got `error:max_turns_salvaged` + a draft PR. Gates the
+  // success-path labeling so we don't ALSO add `ready:<agent>`
+  // (which would auto-advance partial work to code-review).
+  let saferSalvaged = false;
   try {
     streamResult = await runClaudeStreaming({
       promptFile,
@@ -535,6 +649,27 @@ async function dispatchToAgent(
           }
         } catch { /* gh CLI failed — fall through to error path */ }
       }
+
+      // Safer salvage: max_turns + clean vet/build + uncommitted work
+      // → auto-commit, push, open DRAFT PR, label `error:max_turns_salvaged`.
+      // Distinct from the PR-already-exists path above (which treats
+      // max_turns as success). This path preserves work the agent
+      // produced but didn't get to PR-create — keeps it visible while
+      // forcing human triage (no auto-advance via `ready:<agent>`).
+      if (!salvaged
+          && streamResult.terminalReason === "max_turns"
+          && useWorktree
+          && item.issueNumber > 0) {
+        const ok = await attemptSaferSalvage({
+          agentCwd, branchName, agent, item,
+          streamResult, client, logFile,
+        });
+        if (ok) {
+          saferSalvaged = true;
+          salvaged = true;
+        }
+      }
+
       if (!salvaged) {
         throw new Error(
           `Agent error (${streamResult.terminalReason}): ${streamResult.output?.slice(0, 500) || "no output"}`
@@ -603,7 +738,10 @@ async function dispatchToAgent(
     // Post-success labeling
     // Convention: agents add needs-rework:{target} directly (target = who should fix it).
     // The dispatch detects any needs-rework:* label and treats it as a rework signal.
-    if (item.issueNumber > 0) {
+    // Skipped when saferSalvaged: that path already set `error:max_turns_salvaged`
+    // and posted its own comment; adding `ready:<agent>` here would auto-advance
+    // partial work, which is exactly what the salvage path is designed to prevent.
+    if (item.issueNumber > 0 && !saferSalvaged) {
       let reworkTarget: string | null = null;
       try {
         const postLabels = await client.getIssueLabels(item.issueNumber);
@@ -643,7 +781,9 @@ async function dispatchToAgent(
       }
     }
 
-    await notifyDiscord(`✅ **${agent.name}** finished #${item.issueNumber}: ${item.title}\n${item.url}\nReady for review.`);
+    if (!saferSalvaged) {
+      await notifyDiscord(`✅ **${agent.name}** finished #${item.issueNumber}: ${item.title}\n${item.url}\nReady for review.`);
+    }
 
   } catch (error: any) {
     const sessionId = streamResult?.sessionId || "unknown";

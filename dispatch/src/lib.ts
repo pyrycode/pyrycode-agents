@@ -438,6 +438,62 @@ export function maxTurnsFor(agent: AgentConfig): number {
   return 60;
 }
 
+// --------- Safer max_turns salvage ---------
+
+/**
+ * True when the dispatcher should attempt the safer-salvage path on a
+ * `max_turns` failure: auto-commit the agent's uncommitted work, push
+ * it, open a draft PR with the agent's last messages in the body, and
+ * label the ticket `error:max_turns_salvaged` for human triage.
+ *
+ * Distinct from the existing PR-already-exists salvage (which treats
+ * max_turns + open PR as success). This fires when the agent didn't
+ * get to PR creation but did produce buildable code worth preserving.
+ *
+ * **All four gates must pass:**
+ * 1. `terminalReason === "max_turns"` — other failure shapes (api_error,
+ *    timeout) don't fit the salvage pattern.
+ * 2. No PR already exists — the existing salvage path handles that case.
+ * 3. Working tree has changes — nothing to salvage if the worktree is
+ *    clean (the agent did no productive work).
+ * 4. `go vet` AND `go build` both clean — don't ship broken code as a
+ *    draft PR. Failing tests are fine (they're often the signal the
+ *    agent was chasing); failing vet/build means the code itself is
+ *    indeterminate.
+ *
+ * **Why a draft PR (not a regular PR + `ready:developer`):**
+ * salvaged work is by definition incomplete (the agent stopped in the
+ * middle). A regular PR risks silent auto-merge of broken or partial
+ * work. A draft PR + `error:max_turns_salvaged` label keeps the work
+ * visible while forcing a human triage step before it advances.
+ *
+ * Earned its slot from four observed independent failure modes:
+ * - #55 run 1: comprehension surface (mode A)
+ * - #29, #40, #45: edit fan-out (mode B)
+ * - #55 run 2: developer found a real production bug, thrashed trying
+ *   to fix it instead of bailing (mode C)
+ * - #81: OS-service polling time eats budget (mode D)
+ * In all four, the developer produced real value the dispatcher
+ * silently destroyed via worktree teardown. Salvage preserves it.
+ *
+ * Pure decision; the caller does the I/O (commit, push, gh pr create,
+ * label) so this stays testable.
+ */
+export function shouldAttemptSafeSalvage(opts: {
+  terminalReason: string;
+  prAlreadyExists: boolean;
+  gitStatusOutput: string;
+  vetExitCode: number;
+  buildExitCode: number;
+}): boolean {
+  if (opts.terminalReason !== "max_turns") return false;
+  if (opts.prAlreadyExists) return false;
+  if (opts.gitStatusOutput.trim().length === 0) return false;
+  if (opts.vetExitCode !== 0) return false;
+  if (opts.buildExitCode !== 0) return false;
+  return true;
+}
+
 // --------- Issue dependencies ---------
 
 /**

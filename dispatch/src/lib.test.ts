@@ -42,6 +42,7 @@ import {
   REWORK_LOOP_THRESHOLD,
   findAdvanceRule,
   maxTurnsFor,
+  shouldAttemptSafeSalvage,
 } from "./lib.js";
 
 describe("resolveAgentsRepoRoot", () => {
@@ -1114,6 +1115,91 @@ describe("maxTurnsFor", () => {
     // 0 turns. The policy returns the base budget for any non-code-review
     // name; if a future agent needs more, it must be added explicitly.
     assert.equal(maxTurnsFor({ name: "ghost", column: "", claudeMdPath: "", description: "", usesWorktree: false }), 60);
+  });
+});
+
+describe("shouldAttemptSafeSalvage", () => {
+  // Decision predicate for the safer-salvage path: when an agent hits
+  // max_turns with uncommitted work AND the build is clean, the dispatcher
+  // can preserve the work as a draft PR for human triage rather than
+  // destroying it via `git worktree remove --force`. Distinct from the
+  // existing PR-already-exists salvage; this fires only when the agent
+  // didn't get to PR-creation but did produce buildable code.
+  //
+  // Caller does the I/O (git commit, push, gh pr create); this function
+  // only decides whether to attempt salvage. A true return means: clean
+  // build, real changes to preserve, and a max_turns failure (not other
+  // error classes — those don't fit the salvage shape).
+
+  const baseOk = {
+    terminalReason: "max_turns",
+    prAlreadyExists: false,
+    gitStatusOutput: " M internal/e2e/rotation_test.go\n?? internal/e2e/internal/fakeclaude/main.go\n",
+    vetExitCode: 0,
+    buildExitCode: 0,
+  };
+
+  test("max_turns + uncommitted + clean vet + clean build → salvage", () => {
+    assert.equal(shouldAttemptSafeSalvage(baseOk), true);
+  });
+
+  test("non-max_turns error → no salvage (different failure shape)", () => {
+    assert.equal(
+      shouldAttemptSafeSalvage({ ...baseOk, terminalReason: "api_error" }),
+      false,
+    );
+    assert.equal(
+      shouldAttemptSafeSalvage({ ...baseOk, terminalReason: "timeout" }),
+      false,
+    );
+  });
+
+  test("PR already exists → no salvage (existing salvage path handles it)", () => {
+    assert.equal(
+      shouldAttemptSafeSalvage({ ...baseOk, prAlreadyExists: true }),
+      false,
+    );
+  });
+
+  test("clean working tree → no salvage (nothing to preserve)", () => {
+    assert.equal(
+      shouldAttemptSafeSalvage({ ...baseOk, gitStatusOutput: "" }),
+      false,
+    );
+    assert.equal(
+      shouldAttemptSafeSalvage({ ...baseOk, gitStatusOutput: "   \n  " }),
+      false,
+    );
+  });
+
+  test("vet failure → no salvage (don't ship broken code as a draft PR)", () => {
+    assert.equal(
+      shouldAttemptSafeSalvage({ ...baseOk, vetExitCode: 1 }),
+      false,
+    );
+  });
+
+  test("build failure → no salvage (don't ship broken code as a draft PR)", () => {
+    assert.equal(
+      shouldAttemptSafeSalvage({ ...baseOk, buildExitCode: 2 }),
+      false,
+    );
+  });
+
+  test("any non-zero vet OR build → no salvage (independent gates)", () => {
+    // Both must be 0; either non-zero blocks. The point of the gate is
+    // that a human reviewing the salvage PR has buildable code to work
+    // with — failing tests are fine (they're often the signal the agent
+    // was chasing), but failing vet/build means the code itself is in
+    // an indeterminate state.
+    assert.equal(
+      shouldAttemptSafeSalvage({ ...baseOk, vetExitCode: 0, buildExitCode: 1 }),
+      false,
+    );
+    assert.equal(
+      shouldAttemptSafeSalvage({ ...baseOk, vetExitCode: 1, buildExitCode: 0 }),
+      false,
+    );
   });
 });
 
