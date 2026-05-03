@@ -615,6 +615,20 @@ export function isPipelineLabel(label: string): boolean {
 }
 
 /**
+ * Pipeline labels that block dispatch for ALL agents (not scoped to a
+ * specific agent's name). Currently only `error:max_turns_salvaged`,
+ * which marks a ticket whose salvaged work sits in a draft PR awaiting
+ * human triage. Until the label is stripped, no agent should re-run on
+ * this ticket — otherwise the next dispatch's existing PR-salvage path
+ * (which treats max_turns + open PR as success) would auto-advance the
+ * partial work via `ready:<agent>`. See `attemptSaferSalvage` and
+ * `shouldAttemptSafeSalvage` for the salvage flow.
+ */
+export const GLOBAL_BLOCK_LABELS: ReadonlySet<string> = new Set([
+  "error:max_turns_salvaged",
+]);
+
+/**
  * The four-label gate from pollLoop's per-ticket inner loop: a ticket
  * should be skipped from dispatch if any of `ready:<agent>`,
  * `needs-rework:<agent>`, `wip:<agent>`, or `error:<agent>` is present.
@@ -622,10 +636,14 @@ export function isPipelineLabel(label: string): boolean {
  * Returns true to skip (don't dispatch this agent on this ticket).
  * Returns false otherwise (proceed with dispatch).
  *
- * Critically, OTHER agents' labels do NOT cause a skip — only labels
- * scoped to the agent currently being considered.
+ * Per-agent labels: OTHER agents' labels do NOT cause a skip — only
+ * labels scoped to the agent currently being considered.
+ *
+ * Global-block labels (`GLOBAL_BLOCK_LABELS`) skip ALL agents until a
+ * human strips them. Currently just `error:max_turns_salvaged`.
  */
 export function shouldSkipDispatch(labels: string[], agentName: string): boolean {
+  if (labels.some((l) => GLOBAL_BLOCK_LABELS.has(l))) return true;
   return PIPELINE_LABEL_PREFIXES.some((p) => labels.includes(p + agentName));
 }
 

@@ -136,6 +136,33 @@ describe("shouldSkipDispatch", () => {
       assert.equal(shouldSkipDispatch([], agent.name), false);
     }
   });
+
+  test("error:max_turns_salvaged blocks ALL agents until human triages", () => {
+    // The salvaged label sits on a ticket whose work is preserved as a
+    // draft PR awaiting human review. WITHOUT this gate, the next
+    // dispatch cycle would re-dispatch the same agent, hit max_turns
+    // again, and the existing PR-already-exists salvage path would
+    // treat the open draft PR as success — auto-advancing partial work
+    // to code-review with `ready:<agent>`. That's exactly what the
+    // safer-salvage design is meant to prevent. The label must block
+    // dispatch on every agent until a human triages and removes it.
+    for (const agent of AGENTS) {
+      assert.equal(
+        shouldSkipDispatch(["error:max_turns_salvaged"], agent.name),
+        true,
+        `error:max_turns_salvaged should block dispatch for ${agent.name}`,
+      );
+    }
+  });
+
+  test("error:max_turns_salvaged combines with size labels safely", () => {
+    // Real ticket state after salvage: salvaged label + the original
+    // size label. Skip should still fire.
+    assert.equal(
+      shouldSkipDispatch(["size:s", "error:max_turns_salvaged"], "developer"),
+      true,
+    );
+  });
 });
 
 describe("extractReworkTarget", () => {
