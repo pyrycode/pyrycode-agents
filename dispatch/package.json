@@ -6,7 +6,8 @@
     "start": "tsx src/dispatch.ts",
     "watch": "tsx --watch src/dispatch.ts",
     "test": "tsx --test src/*.test.ts",
-    "typecheck": "tsc --noEmit -p ."
+    "typecheck": "tsc --noEmit -p .",
+    "drain": "pkill -TERM -f 'tsx.*src/dispatch.ts' && echo 'SIGTERM sent — dispatcher will exit after current dispatch completes.'"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",

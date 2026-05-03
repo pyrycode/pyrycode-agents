@@ -998,6 +998,19 @@ async function runDoneCleanup(client: GitHubProjectClient): Promise<void> {
   }
 }
 
+// Drain mode: SIGTERM flips this to true. The poll loop checks at the top
+// of each iteration and exits cleanly before starting the next cycle.
+// Whatever agent is currently running finishes normally, so wip:<agent>
+// labels get stripped properly — no manual cleanup after stop.
+// Triggered via `pnpm drain` (which pkills with SIGTERM). Ctrl-C / SIGINT
+// is unchanged — still hard-stops the process.
+let drainMode = false;
+process.on("SIGTERM", () => {
+  if (drainMode) return;  // idempotent — multiple SIGTERMs only print once
+  drainMode = true;
+  console.log("\n🚦 Drain mode: will exit after current dispatch completes.");
+});
+
 async function pollLoop(): Promise<void> {
   const client = new GitHubProjectClient({
     owner: process.env.GITHUB_OWNER!,
@@ -1027,6 +1040,15 @@ async function pollLoop(): Promise<void> {
   const POLL_INTERVAL = 60_000;
 
   while (true) {
+    // Drain check: exit cleanly before starting the next cycle if SIGTERM
+    // was received. Placement at top of loop means a cycle that's already
+    // mid-execution (including a running dispatchToAgent) finishes first —
+    // wip:<agent> labels get stripped naturally by the agent completion path.
+    if (drainMode) {
+      console.log("✅ Drain complete. Exiting cleanly.");
+      break;
+    }
+
     // Drop the per-cycle items cache so this cycle's first read fetches
     // fresh from GraphQL. Without this, every cycle would reuse the
     // first-ever fetch — dispatcher would never see new tickets or
