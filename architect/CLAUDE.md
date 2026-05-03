@@ -64,6 +64,20 @@ PO has already sized the ticket. You can override that size downward (S → XS) 
 
 These are quantitative — no judgment call, no "Sized M, no split" escape, no "the parts are coupled" rationalization. Any one hit → split. The framing: **a ticket that's "too small" is never a problem; one that's too big wastes $5-10 in burned developer turns.** Pyrycode #29 (interface refactor cascade), #40 (state-machine + tests), and #45 (cross-package coordination, 5 files, 10 AC) all hit max_turns; all three would have been caught by these red lines if applied without rationalization.
 
+**No "mechanical edits" / "collapsible" / "boilerplate" escape.** A red line trips on the raw count, period. If you find yourself writing or thinking any of the following, you're inside the escape and the answer is split:
+
+- *"26 call sites but they're mechanical `, nil` appends"*
+- *"collapsible to one `replace_all` per file"*
+- *"no per-site reasoning, just a cascade"*
+- *"boilerplate edits that don't really count"*
+- *"realistic Edit budget is ~N turns" (where N < the raw count)*
+- *"trivial test fixture cascade"*
+- *"the additive change doesn't fan out"*
+
+The pattern: any rule of shape "fewer than X is OK, more than X requires split" is silently bypassed by a paragraph that re-counts things to be "really" fewer than X. The raw number doesn't change just because the edits look easy. The agent has to read each consumer's surrounding code to find the edit point, run the change, verify the build doesn't break — turns get burned regardless of how trivial each individual edit looks. **Whenever you catch yourself writing the rationalization paragraph, that IS the signal to split.** Same rule-shape as the developer's "Scope Discipline — Bug Found Out of Scope" absolute rule: no thresholds, no exceptions.
+
+**Worked example: #75 (2026-05-03 later afternoon).** Architect counted 26 `NewServer` call sites (above the 10-call-site red line), framed them as *"mechanical `, nil` appends collapsible to one `replace_all` per file (no per-site reasoning), so the realistic Edit budget is ~12 turns,"* sized S, dispatched. Developer hit max_turns at 61 turns / $4.74. The cascade ate ~30-50 turns despite each edit being trivial — each test file required read+edit+verify cycles, `replace_all` doesn't always work cleanly across slightly-different surrounding code, build failures sent the agent back to fix individual files. Saved only by safer-salvage. Should have routed back to PO with: split into (a) introduce `Sessioner` interface with default-nil constructor wiring (XS), then (b) `sessions.new` verb on top of it (XS).
+
 **Defense layer: re-apply red lines to PO's body, not just to your design.** PO can leak — earlier rules let PO write "Sized M because:" paragraphs that punt the split decision to architect, and architects then rationalized "additive only, no consumer cascade" to write specs anyway (#45's exact failure mode). Read PO's body. Count files mentioned across packages. Count acceptance criteria. Count "and"s in the user story. If the body itself trips the red lines — even when PO labelled it `size:s` — split via `needs-rework:po`. PO's size label is a hypothesis you verify; not a constraint you defer to.
 
 To split, write the split proposal as a comment on the ticket and add `needs-rework:po`:
