@@ -583,6 +583,46 @@ export function extractRateLimitInfo(err: unknown): {
   return { isRateLimited: true, resetUnixSeconds };
 }
 
+/**
+ * Decide whether to add `ready:<agent>` after a successful agent run.
+ *
+ * The auto-advance step interprets `ready:<agent>` as "this agent is
+ * done, move the ticket forward." But some agents legitimately move
+ * the ticket OUT of their dispatch column during a successful run:
+ *
+ * - **PO** demotes Backlog → Inbox when a ticket lacks information
+ *   for refinement (per PO's CLAUDE.md: "If a Backlog ticket lacks
+ *   enough information to refine, demote it back to Inbox").
+ * - **PO** moves the parent ticket Backlog → Done after a split (it's
+ *   superseded by the child tickets PO created).
+ *
+ * In those cases, adding `ready:po` would attach a stale "ready for
+ * the next stage" signal to a ticket the agent explicitly moved off
+ * the pipeline. The auto-advance rule wouldn't fire (the ticket is
+ * no longer in the rule's `from` column), but a human scanning the
+ * board sees `ready:po` on an Inbox ticket and is misled about state.
+ *
+ * Rules:
+ * - Rework requested → skip (existing semantics)
+ * - Agent moved ticket out of its column → skip (the move IS the signal)
+ * - Current column unknown (post-run fetch failed) → skip (cautious)
+ * - Otherwise → add the label
+ *
+ * Cost asymmetry favors caution: false positive (skip when should add)
+ * means one cycle of delay before the next agent dispatches; false
+ * negative (add when shouldn't) creates a stale label that misleads
+ * the board view.
+ */
+export function shouldAddReadyLabel(opts: {
+  agentColumn: string;
+  currentColumn: string | null;
+  hasReworkTarget: boolean;
+}): boolean {
+  if (opts.hasReworkTarget) return false;
+  if (opts.currentColumn === null) return false;
+  return opts.currentColumn === opts.agentColumn;
+}
+
 // --------- Issue dependencies ---------
 
 /**

@@ -29,6 +29,7 @@ import {
   shouldAttemptSafeSalvage,
   findReadyPrNumber,
   extractRateLimitInfo,
+  shouldAddReadyLabel,
 } from "./lib.js";
 
 // Load .env from agents repo root (where dispatch lives).
@@ -827,15 +828,34 @@ async function dispatchToAgent(
         console.warn(`   ⚠️  Failed to check post-run labels: ${e}`);
       }
 
-      if (!reworkTarget) {
+      // Decide whether to add `ready:<agent>` based on:
+      //   - rework target presence (existing semantics)
+      //   - whether the agent moved the ticket out of its dispatch
+      //     column (e.g. PO demoting to Inbox, PO moving split parent
+      //     to Done). In those cases the column move IS the agent's
+      //     completion signal; adding `ready:<agent>` would attach a
+      //     misleading "ready" label to a ticket already routed away.
+      //   See `shouldAddReadyLabel` in lib.ts for the full rationale.
+      let currentColumn: string | null = null;
+      try {
+        currentColumn = await client.getItemStatus(item.issueNumber, { forceRefresh: true });
+      } catch (e) {
+        console.warn(`   ⚠️  Failed to fetch post-run status for #${item.issueNumber}: ${e}`);
+      }
+
+      if (shouldAddReadyLabel({ agentColumn: agent.column, currentColumn, hasReworkTarget: reworkTarget !== null })) {
         try {
           await client.addLabel(item.issueNumber, `ready:${agent.name}`);
           console.log(`   🏷️  Added ready:${agent.name} to #${item.issueNumber}`);
         } catch (e) {
           console.warn(`   ⚠️  Failed to add ready:${agent.name} label: ${e}`);
         }
-      } else {
+      } else if (reworkTarget) {
         console.log(`   🔄 Rework requested → needs-rework:${reworkTarget}`);
+      } else if (currentColumn !== null && currentColumn !== agent.column) {
+        console.log(`   📋 Agent moved #${item.issueNumber} ${agent.column} → ${currentColumn} — skipping ready:${agent.name}`);
+      } else {
+        console.log(`   ⚠️  Skipping ready:${agent.name} for #${item.issueNumber} (status fetch failed; will retry next cycle)`);
       }
 
       try {

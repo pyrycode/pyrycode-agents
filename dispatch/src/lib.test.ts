@@ -45,6 +45,7 @@ import {
   shouldAttemptSafeSalvage,
   findReadyPrNumber,
   extractRateLimitInfo,
+  shouldAddReadyLabel,
 } from "./lib.js";
 
 describe("resolveAgentsRepoRoot", () => {
@@ -1355,6 +1356,76 @@ describe("extractRateLimitInfo", () => {
       extractRateLimitInfo("API rate limit already exceeded")?.isRateLimited,
       true,
     );
+  });
+});
+
+describe("shouldAddReadyLabel", () => {
+  // After a successful agent run, the dispatcher adds `ready:<agent>`
+  // so the auto-advance step moves the ticket to the next column. But
+  // some agents legitimately move the ticket OUT of their dispatch
+  // column during a successful run — PO can demote a Backlog ticket
+  // back to Inbox when it lacks information for refinement (per
+  // PO's CLAUDE.md), and PO moves a parent ticket to Done after a
+  // split. In those cases, adding `ready:po` would attach a "ready
+  // for the next stage" signal to a ticket the agent explicitly
+  // moved off the pipeline, creating a stale label that misleads
+  // anyone scanning the board.
+  //
+  // Pyrycode #57 (2026-05-02): PO demoted to Inbox per its CLAUDE.md
+  // ("defer until Phase 1.1's pyry attach <id> lands"). Dispatcher
+  // still added `ready:po` because its existing check only gated on
+  // `needs-rework:*` labels, not column movement. Same shape as the
+  // earlier label/PR-classification bugs — predicate didn't account
+  // for a new agent behavior pattern.
+
+  test("agent column matches current + no rework → add label", () => {
+    assert.equal(shouldAddReadyLabel({
+      agentColumn: "Backlog", currentColumn: "Backlog", hasReworkTarget: false,
+    }), true);
+  });
+
+  test("rework target set → skip (existing behavior)", () => {
+    assert.equal(shouldAddReadyLabel({
+      agentColumn: "Backlog", currentColumn: "Backlog", hasReworkTarget: true,
+    }), false);
+  });
+
+  test("agent demoted ticket to Inbox → skip (don't auto-advance demoted work)", () => {
+    assert.equal(shouldAddReadyLabel({
+      agentColumn: "Backlog", currentColumn: "Inbox", hasReworkTarget: false,
+    }), false);
+  });
+
+  test("agent moved ticket to Done (e.g. PO split parent) → skip", () => {
+    assert.equal(shouldAddReadyLabel({
+      agentColumn: "Backlog", currentColumn: "Done", hasReworkTarget: false,
+    }), false);
+  });
+
+  test("any forward column move from agent → skip (agent already advanced)", () => {
+    // Hypothetical: an agent that moves the ticket to the next column
+    // itself (none currently do, but defensive). Adding ready:<agent>
+    // when the ticket is already in the next column would just leave
+    // a stale label.
+    assert.equal(shouldAddReadyLabel({
+      agentColumn: "In Development", currentColumn: "In Code Review", hasReworkTarget: false,
+    }), false);
+  });
+
+  test("currentColumn null (couldn't fetch) → skip (cautious default)", () => {
+    // If the post-run status fetch failed, default to "skip" rather
+    // than "add". False positive (skip when should add) just means
+    // one cycle of delay (next dispatch picks up the now-stable state).
+    // False negative (add when shouldn't) creates a stale label.
+    assert.equal(shouldAddReadyLabel({
+      agentColumn: "Backlog", currentColumn: null, hasReworkTarget: false,
+    }), false);
+  });
+
+  test("rework + column move both → skip (either alone would skip)", () => {
+    assert.equal(shouldAddReadyLabel({
+      agentColumn: "Backlog", currentColumn: "Inbox", hasReworkTarget: true,
+    }), false);
   });
 });
 

@@ -112,6 +112,27 @@ export class GitHubProjectClient {
   }
 
   /**
+   * Look up a ticket's current project-board column by issue number.
+   * Returns null if the ticket isn't in the project (or the fetch fails).
+   *
+   * Used by the dispatcher's post-success path to detect "agent moved
+   * the ticket out of its dispatch column" (PO demoting to Inbox, PO
+   * moving a split parent to Done). When that happens, the dispatcher
+   * skips the `ready:<agent>` label so the board view doesn't show a
+   * stale "ready" signal on a ticket the agent already routed away.
+   *
+   * `forceRefresh: true` clears the per-cycle cache before reading —
+   * the agent's run could have moved the ticket since the cycle's
+   * first fetch, so the cached snapshot would be stale.
+   */
+  async getItemStatus(issueNumber: number, options?: { forceRefresh?: boolean }): Promise<string | null> {
+    if (options?.forceRefresh) this.clearItemsCache();
+    const all = await this.getAllItems();
+    const item = all.find(i => i.issueNumber === issueNumber);
+    return item?.status ?? null;
+  }
+
+  /**
    * Fetch all project items from GraphQL once per cycle. Both public
    * methods filter from this. Stores the in-flight Promise so concurrent
    * calls within a cycle dedupe on the same request (Promise reuse).
