@@ -43,6 +43,7 @@ import {
   findAdvanceRule,
   maxTurnsFor,
   shouldAttemptSafeSalvage,
+  findReadyPrNumber,
 } from "./lib.js";
 
 describe("resolveAgentsRepoRoot", () => {
@@ -1227,6 +1228,62 @@ describe("shouldAttemptSafeSalvage", () => {
       shouldAttemptSafeSalvage({ ...baseOk, vetExitCode: 1, buildExitCode: 0 }),
       false,
     );
+  });
+});
+
+describe("findReadyPrNumber", () => {
+  // Used by the existing PR-already-exists salvage path: max_turns is
+  // treated as success ONLY if a non-draft (ready) PR exists for the
+  // branch. Draft PRs don't count — they're typically the salvage
+  // helper's own output, opened mid-work and waiting on human triage.
+  // Treating a draft PR as "agent finished, just out of turns on
+  // cleanup" auto-advances partial work via `ready:<agent>`, which
+  // is exactly what the safer-salvage design is meant to prevent.
+
+  test("empty array → null", () => {
+    assert.equal(findReadyPrNumber("[]"), null);
+  });
+
+  test("single draft PR → null (don't treat draft as success)", () => {
+    assert.equal(findReadyPrNumber('[{"number": 42, "isDraft": true}]'), null);
+  });
+
+  test("single ready PR → that PR's number", () => {
+    assert.equal(findReadyPrNumber('[{"number": 42, "isDraft": false}]'), 42);
+  });
+
+  test("draft + ready → ready PR's number (skip the draft)", () => {
+    assert.equal(
+      findReadyPrNumber('[{"number": 41, "isDraft": true}, {"number": 42, "isDraft": false}]'),
+      42,
+    );
+  });
+
+  test("multiple ready → first one (deterministic)", () => {
+    // gh pr list returns most-recent first; first ready = most recent.
+    assert.equal(
+      findReadyPrNumber('[{"number": 42, "isDraft": false}, {"number": 41, "isDraft": false}]'),
+      42,
+    );
+  });
+
+  test("malformed JSON → null (don't crash on gh CLI failure)", () => {
+    assert.equal(findReadyPrNumber("not json"), null);
+    assert.equal(findReadyPrNumber(""), null);
+    assert.equal(findReadyPrNumber("   "), null);
+  });
+
+  test("missing isDraft field → treated as ready (defensive — assume non-draft)", () => {
+    // If gh's output ever omits isDraft (schema change?), default to
+    // ready. The PR-salvage path is the safer path to default to —
+    // false positives just cause an extra dispatch run, false negatives
+    // (treating ready as draft) would silently auto-advance.
+    // Wait — that's backwards. Treating a draft AS ready auto-advances;
+    // treating ready as draft makes the dispatcher re-run the agent,
+    // wasting tokens but never auto-advancing. The cautious default
+    // is "treat as draft when unclear" — i.e., return null for missing
+    // isDraft. Lock that in.
+    assert.equal(findReadyPrNumber('[{"number": 42}]'), null);
   });
 });
 

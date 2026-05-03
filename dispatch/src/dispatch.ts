@@ -27,6 +27,7 @@ import {
   REWORK_LOOP_THRESHOLD,
   maxTurnsFor,
   shouldAttemptSafeSalvage,
+  findReadyPrNumber,
 } from "./lib.js";
 
 // Load .env from agents repo root (where dispatch lives).
@@ -436,6 +437,14 @@ async function attemptSaferSalvage(opts: {
       `- Issue: ${opts.item.url}`,
       ``,
       `This PR is a **draft** — auto-merge is disabled until a reviewer marks it ready (or closes it). Ticket label \`error:max_turns_salvaged\` indicates triage required.`,
+      ``,
+      // Auto-closes the issue when the salvage PR is merged. The reviewer
+      // had to mark the draft as ready first — that's the explicit human
+      // endorsement of "this PR completes the ticket". If the salvage
+      // commits aren't enough, the reviewer adds more commits to the PR
+      // before marking ready; the augmented PR still closes the ticket
+      // on merge, which is correct.
+      `Closes #${opts.item.issueNumber}`,
     ].join("\n");
 
     // Order matters: addLabel BEFORE pr create. The label is the
@@ -684,13 +693,18 @@ async function dispatchToAgent(
       let salvaged = false;
       if (streamResult.terminalReason === "max_turns" && item.issueNumber > 0) {
         try {
-          const prCheck = execSync(
-            `gh pr list --head "${branchName}" --state open --json number --jq '.[0].number'`,
+          // Query both number AND isDraft so we can skip drafts. Drafts are
+          // typically the safer-salvage helper's own output (partial work
+          // awaiting human triage); treating them as "agent finished, just
+          // out of turns on cleanup" would auto-advance partial work.
+          const prListJson = execSync(
+            `gh pr list --head "${branchName}" --state open --json number,isDraft`,
             { cwd: agentCwd, encoding: "utf-8", timeout: 15_000 }
-          ).trim();
-          if (prCheck && !isNaN(parseInt(prCheck, 10))) {
-            console.log(`   ⚠️  Hit max_turns but PR #${prCheck} exists — treating as success`);
-            writeLog(logFile, "SALVAGED", `Agent hit max_turns (${streamResult.numTurns}) but PR #${prCheck} was already created. Treating as success.`);
+          );
+          const readyPr = findReadyPrNumber(prListJson);
+          if (readyPr !== null) {
+            console.log(`   ⚠️  Hit max_turns but PR #${readyPr} exists (non-draft) — treating as success`);
+            writeLog(logFile, "SALVAGED", `Agent hit max_turns (${streamResult.numTurns}) but ready PR #${readyPr} was already created. Treating as success.`);
             salvaged = true;
           }
         } catch { /* gh CLI failed — fall through to error path */ }

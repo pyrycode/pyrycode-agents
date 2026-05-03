@@ -494,6 +494,41 @@ export function shouldAttemptSafeSalvage(opts: {
   return true;
 }
 
+/**
+ * Parse the output of `gh pr list --head <branch> --state open --json
+ * number,isDraft` and return the number of the first NON-DRAFT (ready)
+ * PR, or null if none exists (no PRs at all, all are drafts, or the
+ * input is unparseable).
+ *
+ * Used by the existing PR-already-exists salvage path. That path treats
+ * `max_turns + open PR exists` as success (the agent finished the work
+ * and ran out of turns on cleanup). But after the safer-salvage lever
+ * shipped, an open PR for a branch is often a DRAFT opened by salvage
+ * itself — partial work awaiting human triage. Treating it as success
+ * would auto-advance partial work via `ready:<agent>`, defeating the
+ * safer-salvage design's safety property.
+ *
+ * Defaults to "draft" when `isDraft` is missing — the cautious default.
+ * False positive (treating ready as draft) wastes a dispatch turn but
+ * doesn't auto-advance broken work. False negative (treating draft as
+ * ready) silently advances partial work to code-review. Cost asymmetry
+ * favors the cautious default.
+ */
+export function findReadyPrNumber(prListJson: string): number | null {
+  let prs: Array<{ number?: number; isDraft?: boolean }>;
+  try {
+    prs = JSON.parse(prListJson);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(prs)) return null;
+  for (const pr of prs) {
+    if (typeof pr.number !== "number") continue;
+    if (pr.isDraft === false) return pr.number;
+  }
+  return null;
+}
+
 // --------- Issue dependencies ---------
 
 /**
