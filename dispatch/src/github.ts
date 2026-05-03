@@ -81,6 +81,13 @@ export class GitHubProjectClient {
    * agent pipeline polling on a 60s cadence.
    */
   private allItemsCache: Promise<RawItem[]> | null = null;
+  /**
+   * Snapshot of the GitHub GraphQL rate-limit state from the most
+   * recent successful fetch. Used by the dispatcher to log budget
+   * consumption per cycle and to make defensive sleep decisions if
+   * `remaining` gets dangerously low. Null until the first fetch.
+   */
+  private lastRateLimit: { remaining: number; resetAt: string; cost: number } | null = null;
 
   constructor(config: ProjectConfig) {
     this.config = config;
@@ -99,6 +106,11 @@ export class GitHubProjectClient {
     this.allItemsCache = null;
   }
 
+  /** Latest GraphQL rate-limit state, or null if no successful fetch yet. */
+  getRateLimit(): { remaining: number; resetAt: string; cost: number } | null {
+    return this.lastRateLimit;
+  }
+
   /**
    * Fetch all project items from GraphQL once per cycle. Both public
    * methods filter from this. Stores the in-flight Promise so concurrent
@@ -114,8 +126,13 @@ export class GitHubProjectClient {
   private async fetchAllItems(): Promise<RawItem[]> {
     if (!this.projectId) throw new Error("Not initialized");
 
+    // `rateLimit` adds visibility into our GraphQL budget — the dispatcher
+    // logs `remaining` once per cycle so a slow leak (or a sudden burst)
+    // is visible in normal operation, not just at the moment we hit the
+    // 5000-points-per-hour ceiling. `cost` is what THIS query consumed.
     const result: any = await this.gql(`
       query($projectId: ID!) {
+        rateLimit { remaining resetAt cost }
         node(id: $projectId) {
           ... on ProjectV2 {
             items(first: 100, orderBy: { field: POSITION, direction: ASC }) {
@@ -148,6 +165,14 @@ export class GitHubProjectClient {
         }
       }
     `, { projectId: this.projectId });
+
+    if (result.rateLimit) {
+      this.lastRateLimit = {
+        remaining: result.rateLimit.remaining,
+        resetAt: result.rateLimit.resetAt,
+        cost: result.rateLimit.cost,
+      };
+    }
 
     const items: RawItem[] = [];
     for (const node of result.node.items.nodes) {

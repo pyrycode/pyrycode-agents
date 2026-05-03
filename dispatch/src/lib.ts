@@ -529,6 +529,60 @@ export function findReadyPrNumber(prListJson: string): number | null {
   return null;
 }
 
+/**
+ * Detect whether a thrown error is a GitHub rate-limit failure, and
+ * surface the reset deadline so the caller can sleep until reset
+ * instead of cascading errors for the rest of the rate-limit window.
+ *
+ * Returns:
+ * - `null` if the error is NOT a rate-limit (caller handles normally)
+ * - `{ isRateLimited: true, resetUnixSeconds: <number> | null }` if
+ *   it IS a rate-limit; the unix timestamp is from the
+ *   `x-ratelimit-reset` header on the failed response if Octokit
+ *   surfaced it, or null if not (caller falls back to a default sleep).
+ *
+ * Detection is by message text — GitHub's GraphQL API returns
+ * "API rate limit already exceeded" and the REST API returns "API rate
+ * limit exceeded"; we match both. The reset header is informational
+ * only — its presence alone doesn't indicate rate-limit state (GitHub
+ * returns it on every authenticated request).
+ *
+ * Last night's incident: dispatcher hit the 5000 points/hour limit and
+ * cascaded errors for the next ~50 minutes until reset. With this
+ * detection + a sleep loop in pollLoop, the dispatcher pauses cleanly
+ * and resumes on the same cycle after reset.
+ */
+export function extractRateLimitInfo(err: unknown): {
+  isRateLimited: true;
+  resetUnixSeconds: number | null;
+} | null {
+  // Extract the message text from Error, string, or {message} shapes.
+  let message: string;
+  if (err instanceof Error) message = err.message;
+  else if (typeof err === "string") message = err;
+  else if (err && typeof err === "object" && "message" in err && typeof (err as any).message === "string") {
+    message = (err as any).message;
+  } else {
+    return null;
+  }
+
+  if (!message.includes("API rate limit") || !message.includes("exceeded")) {
+    return null;
+  }
+
+  let resetUnixSeconds: number | null = null;
+  const response = (err as any)?.response;
+  const headerValue = response?.headers?.["x-ratelimit-reset"];
+  if (typeof headerValue === "string") {
+    const parsed = parseInt(headerValue, 10);
+    if (!isNaN(parsed)) resetUnixSeconds = parsed;
+  } else if (typeof headerValue === "number") {
+    resetUnixSeconds = headerValue;
+  }
+
+  return { isRateLimited: true, resetUnixSeconds };
+}
+
 // --------- Issue dependencies ---------
 
 /**

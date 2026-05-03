@@ -44,6 +44,7 @@ import {
   maxTurnsFor,
   shouldAttemptSafeSalvage,
   findReadyPrNumber,
+  extractRateLimitInfo,
 } from "./lib.js";
 
 describe("resolveAgentsRepoRoot", () => {
@@ -1284,6 +1285,76 @@ describe("findReadyPrNumber", () => {
     // is "treat as draft when unclear" — i.e., return null for missing
     // isDraft. Lock that in.
     assert.equal(findReadyPrNumber('[{"number": 42}]'), null);
+  });
+});
+
+describe("extractRateLimitInfo", () => {
+  // Detect GitHub rate-limit errors from the Octokit GraphQL client
+  // and surface a wait deadline so the dispatcher can sleep until reset
+  // instead of cascading errors for the rest of the rate-limit window.
+  // Last night's incident: limit hit, dispatcher kept polling for ~50min
+  // before reset, every cycle producing the full set of error logs.
+
+  test("non-rate-limit error → null", () => {
+    assert.equal(extractRateLimitInfo(new Error("network timeout")), null);
+    assert.equal(extractRateLimitInfo(null), null);
+    assert.equal(extractRateLimitInfo(undefined), null);
+    assert.equal(extractRateLimitInfo({}), null);
+  });
+
+  test("rate-limit error message → detected as rate-limit", () => {
+    const err = new Error("Request failed due to following response errors:\n - API rate limit already exceeded for user ID 275333887.");
+    const info = extractRateLimitInfo(err);
+    assert.notEqual(info, null);
+    assert.equal(info!.isRateLimited, true);
+  });
+
+  test("rate-limit error with x-ratelimit-reset header → resetAt populated", () => {
+    // Octokit error shape: error has `response.headers` map with the
+    // unix timestamp of the next reset.
+    const err: any = new Error("API rate limit already exceeded");
+    err.response = { headers: { "x-ratelimit-reset": "1777793956" } };
+    const info = extractRateLimitInfo(err);
+    assert.equal(info!.isRateLimited, true);
+    assert.equal(info!.resetUnixSeconds, 1777793956);
+  });
+
+  test("rate-limit error without reset header → no resetAt (caller defaults)", () => {
+    const err = new Error("API rate limit already exceeded");
+    const info = extractRateLimitInfo(err);
+    assert.equal(info!.isRateLimited, true);
+    assert.equal(info!.resetUnixSeconds, null);
+  });
+
+  test("non-rate-limit error WITH reset header → still null (don't conflate)", () => {
+    // Defensive: the reset header alone doesn't indicate rate-limit;
+    // GitHub returns the header on every request. Only the message text
+    // signals the actual rate-limit state.
+    const err: any = new Error("validation failed");
+    err.response = { headers: { "x-ratelimit-reset": "1777793956" } };
+    assert.equal(extractRateLimitInfo(err), null);
+  });
+
+  test("recognizes both 'rate limit' phrasings GitHub uses", () => {
+    // GitHub's primary rate limit returns "API rate limit exceeded" on
+    // the REST endpoints and "API rate limit already exceeded" on
+    // GraphQL. Match both.
+    assert.equal(
+      extractRateLimitInfo(new Error("API rate limit exceeded for user"))?.isRateLimited,
+      true,
+    );
+    assert.equal(
+      extractRateLimitInfo(new Error("API rate limit already exceeded for user"))?.isRateLimited,
+      true,
+    );
+  });
+
+  test("string error (not Error instance) with rate-limit phrase → detected", () => {
+    // Some Octokit error paths throw strings; be defensive.
+    assert.equal(
+      extractRateLimitInfo("API rate limit already exceeded")?.isRateLimited,
+      true,
+    );
   });
 });
 

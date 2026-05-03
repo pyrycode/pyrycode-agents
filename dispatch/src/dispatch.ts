@@ -28,6 +28,7 @@ import {
   maxTurnsFor,
   shouldAttemptSafeSalvage,
   findReadyPrNumber,
+  extractRateLimitInfo,
 } from "./lib.js";
 
 // Load .env from agents repo root (where dispatch lives).
@@ -1135,6 +1136,37 @@ async function pollLoop(): Promise<void> {
     // the consistency model (single snapshot per cycle, intra-cycle
     // state changes not visible until next cycle).
     client.clearItemsCache();
+
+    // Proactive fetch + rate-limit handling. Trigger the cycle's single
+    // GraphQL fetch up front (subsequent sub-step calls hit the cache).
+    // If the response surfaces a rate-limit error, sleep until reset
+    // instead of letting every sub-step independently fail and cascade
+    // error logs for the rest of the rate-limit window (last night's
+    // failure mode — ~50 minutes of error noise before reset).
+    try {
+      await client.getItemsByStatus("Backlog");  // touches the cache
+      const rl = client.getRateLimit();
+      if (rl) {
+        console.log(`   📊 GraphQL: ${rl.remaining} points remaining (this query: ${rl.cost}; resets ${rl.resetAt})`);
+      }
+    } catch (e) {
+      const rateLimit = extractRateLimitInfo(e);
+      if (rateLimit) {
+        const nowSec = Math.floor(Date.now() / 1000);
+        // Default sleep: 60s if no reset header (defensive — better than
+        // tight-looping into more rate-limit errors).
+        const targetSec = rateLimit.resetUnixSeconds ?? (nowSec + 60);
+        const waitSec = Math.max(60, targetSec - nowSec + 5);  // +5s safety margin
+        const waitMin = Math.round(waitSec / 60);
+        console.warn(`   🛑 GraphQL rate limit hit. Sleeping ${waitMin}min (until reset + 5s safety margin), then resuming poll cycle.`);
+        await new Promise((r) => setTimeout(r, waitSec * 1000));
+        continue;  // restart cycle after sleep
+      }
+      // Non-rate-limit fetch error: log + continue to sub-steps. The
+      // sub-steps will independently retry and most will fail too, but
+      // they'll continue normally on the next cycle.
+      console.warn(`   ⚠️  Pre-fetch failed (non-rate-limit): ${(e as any)?.message || e}`);
+    }
 
     // Reconcile state FIRST every cycle: closed-sweep, route rework labels,
     // auto-advance ready:* tickets, then strip pipeline labels off any
