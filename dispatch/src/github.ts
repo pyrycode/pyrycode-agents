@@ -38,18 +38,143 @@ async function fetchWithRetry(
  * fix when this becomes a real constraint. Today's pyrycode project is
  * well under the cap.
  */
+/**
+ * Internal item shape during the cache lifetime — same as `ProjectItem`
+ * plus `state` (issue OPEN/CLOSED) so both `getItemsByStatus` (open
+ * only) and `getClosedItemsNotInDone` (closed only) can filter from a
+ * single cached fetch without re-querying.
+ */
+type RawItem = ProjectItem & { state: string | null };
+
+/** Strip the cache-internal `state` field; callers see the public ProjectItem shape. */
+function stripState(raw: RawItem): ProjectItem {
+  const { state: _state, ...item } = raw;
+  return item;
+}
+
 export class GitHubProjectClient {
   private gql: typeof graphql;
   private config: ProjectConfig;
   private projectId: string | null = null;
   private statusFieldId: string | null = null;
   private statusOptions: Map<string, string> = new Map();
+  /**
+   * Per-cycle cache of all project items.
+   *
+   * Both `getItemsByStatus` and `getClosedItemsNotInDone` issued
+   * IDENTICAL GraphQL queries (full project items list with nested
+   * labels/blockedBy/fieldValues) and then filtered client-side. Per
+   * cycle the dispatcher called these ~14 times across runReworkRouting,
+   * runAutoAdvance, runDoneCleanup, runClosedSweep, and the per-agent
+   * dispatch loop — burning ~14 identical queries' worth of GraphQL
+   * points every 60s. With this cache, one fetch per cycle serves all
+   * sub-steps. The dispatcher calls `clearItemsCache()` at the top of
+   * each poll cycle so the next fetch is fresh.
+   *
+   * **Consistency trade-off:** intra-cycle state changes (e.g.
+   * `runAutoAdvance` moving a ticket Backlog → In Architecture) are
+   * NOT visible to subsequent sub-steps in the same cycle — they see
+   * the snapshot from the cycle's first fetch. The next cycle's clear
+   * + refetch picks up all changes. This matches the snapshot semantic
+   * a single big query would produce; the trade-off is one cycle of
+   * lag for cross-step state propagation, which is acceptable for an
+   * agent pipeline polling on a 60s cadence.
+   */
+  private allItemsCache: Promise<RawItem[]> | null = null;
 
   constructor(config: ProjectConfig) {
     this.config = config;
     this.gql = graphql.defaults({
       headers: { authorization: `token ${config.token}` },
     });
+  }
+
+  /**
+   * Drop the cached project-items snapshot. Call at the top of each
+   * poll cycle so the next `getItemsByStatus` / `getClosedItemsNotInDone`
+   * call refetches. Without this the cache would persist across cycles
+   * and the dispatcher would never see new tickets or state changes.
+   */
+  clearItemsCache(): void {
+    this.allItemsCache = null;
+  }
+
+  /**
+   * Fetch all project items from GraphQL once per cycle. Both public
+   * methods filter from this. Stores the in-flight Promise so concurrent
+   * calls within a cycle dedupe on the same request (Promise reuse).
+   */
+  private getAllItems(): Promise<RawItem[]> {
+    if (!this.allItemsCache) {
+      this.allItemsCache = this.fetchAllItems();
+    }
+    return this.allItemsCache;
+  }
+
+  private async fetchAllItems(): Promise<RawItem[]> {
+    if (!this.projectId) throw new Error("Not initialized");
+
+    const result: any = await this.gql(`
+      query($projectId: ID!) {
+        node(id: $projectId) {
+          ... on ProjectV2 {
+            items(first: 100, orderBy: { field: POSITION, direction: ASC }) {
+              nodes {
+                id
+                fieldValueByName(name: "Status") {
+                  ... on ProjectV2ItemFieldSingleSelectValue {
+                    name
+                  }
+                }
+                content {
+                  ... on Issue {
+                    id
+                    number
+                    title
+                    body
+                    url
+                    state
+                    labels(first: 10) {
+                      nodes { name }
+                    }
+                    blockedBy(first: 10) {
+                      nodes { number state }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    `, { projectId: this.projectId });
+
+    const items: RawItem[] = [];
+    for (const node of result.node.items.nodes) {
+      const itemStatus = node.fieldValueByName?.name;
+      if (!node.content) continue;
+      // Skip non-Issue content (PR fragment, DraftIssue) — number is
+      // undefined on those so any downstream code keying on it would
+      // silently misbehave.
+      if (typeof node.content.number !== "number") continue;
+
+      items.push({
+        id: node.id,
+        issueId: node.content.id,
+        issueNumber: node.content.number,
+        title: node.content.title,
+        body: node.content.body ?? "",
+        status: itemStatus ?? "no-status",
+        state: node.content.state ?? null,
+        labels: node.content.labels.nodes.map((l: any) => l.name),
+        url: node.content.url,
+        blockedBy: (node.content.blockedBy?.nodes ?? []).map((b: any) => ({
+          number: b.number,
+          state: b.state,
+        })),
+      });
+    }
+    return items;
   }
 
   async initialize(): Promise<void> {
@@ -106,138 +231,17 @@ export class GitHubProjectClient {
    * issues so the per-column dispatch loops never operate on them.
    */
   async getClosedItemsNotInDone(): Promise<ProjectItem[]> {
-    if (!this.projectId) throw new Error("Not initialized");
-
-    const result: any = await this.gql(`
-      query($projectId: ID!) {
-        node(id: $projectId) {
-          ... on ProjectV2 {
-            items(first: 100, orderBy: { field: POSITION, direction: ASC }) {
-              nodes {
-                id
-                fieldValueByName(name: "Status") {
-                  ... on ProjectV2ItemFieldSingleSelectValue {
-                    name
-                  }
-                }
-                content {
-                  ... on Issue {
-                    id
-                    number
-                    title
-                    body
-                    url
-                    state
-                    labels(first: 10) {
-                      nodes { name }
-                    }
-                    blockedBy(first: 10) {
-                      nodes { number state }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    `, { projectId: this.projectId });
-
-    const items: ProjectItem[] = [];
-    for (const node of result.node.items.nodes) {
-      const itemStatus = node.fieldValueByName?.name;
-      if (!node.content) continue;
-      if (node.content.state !== "CLOSED") continue;
-      if (itemStatus === "Done") continue;
-      // Issue fragment didn't apply (PR, DraftIssue) — skip rather than
-      // push a malformed item with undefined number/labels.
-      if (typeof node.content.number !== "number") continue;
-
-      items.push({
-        id: node.id,
-        issueId: node.content.id,
-        issueNumber: node.content.number,
-        title: node.content.title,
-        body: node.content.body ?? "",
-        status: itemStatus ?? "no-status",
-        labels: node.content.labels.nodes.map((l: any) => l.name),
-        url: node.content.url,
-        blockedBy: (node.content.blockedBy?.nodes ?? []).map((b: any) => ({
-          number: b.number,
-          state: b.state,
-        })),
-      });
-    }
-
-    return items;
+    const all = await this.getAllItems();
+    return all
+      .filter(item => item.state === "CLOSED" && item.status !== "Done")
+      .map(stripState);
   }
 
   async getItemsByStatus(status: string): Promise<ProjectItem[]> {
-    if (!this.projectId) throw new Error("Not initialized");
-
-    const result: any = await this.gql(`
-      query($projectId: ID!) {
-        node(id: $projectId) {
-          ... on ProjectV2 {
-            items(first: 100, orderBy: { field: POSITION, direction: ASC }) {
-              nodes {
-                id
-                fieldValueByName(name: "Status") {
-                  ... on ProjectV2ItemFieldSingleSelectValue {
-                    name
-                  }
-                }
-                content {
-                  ... on Issue {
-                    id
-                    number
-                    title
-                    body
-                    url
-                    state
-                    labels(first: 10) {
-                      nodes { name }
-                    }
-                    blockedBy(first: 10) {
-                      nodes { number state }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    `, { projectId: this.projectId });
-
-    const items: ProjectItem[] = [];
-    for (const node of result.node.items.nodes) {
-      const itemStatus = node.fieldValueByName?.name;
-      if (itemStatus !== status) continue;
-      if (!node.content) continue;
-      if (node.content.state === "CLOSED") continue;
-      // Issue fragment didn't apply (PR, DraftIssue) — skip rather than
-      // push a malformed item with undefined number/labels. The CLOSED
-      // check above doesn't catch this (state is undefined, not "CLOSED").
-      if (typeof node.content.number !== "number") continue;
-
-      items.push({
-        id: node.id,
-        issueId: node.content.id,
-        issueNumber: node.content.number,
-        title: node.content.title,
-        body: node.content.body ?? "",
-        status: itemStatus,
-        labels: node.content.labels.nodes.map((l: any) => l.name),
-        url: node.content.url,
-        blockedBy: (node.content.blockedBy?.nodes ?? []).map((b: any) => ({
-          number: b.number,
-          state: b.state,
-        })),
-      });
-    }
-
-    return items;
+    const all = await this.getAllItems();
+    return all
+      .filter(item => item.state !== "CLOSED" && item.status === status)
+      .map(stripState);
   }
 
   async updateItemStatus(itemId: string, newStatus: string): Promise<void> {

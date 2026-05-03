@@ -1128,6 +1128,14 @@ async function pollLoop(): Promise<void> {
   const POLL_INTERVAL = 60_000;
 
   while (true) {
+    // Drop the per-cycle items cache so this cycle's first read fetches
+    // fresh from GraphQL. Without this, every cycle would reuse the
+    // first-ever fetch — dispatcher would never see new tickets or
+    // state changes. See `clearItemsCache` docstring in github.ts for
+    // the consistency model (single snapshot per cycle, intra-cycle
+    // state changes not visible until next cycle).
+    client.clearItemsCache();
+
     // Reconcile state FIRST every cycle: closed-sweep, route rework labels,
     // auto-advance ready:* tickets, then strip pipeline labels off any
     // ticket now sitting in Done. This makes restart behavior predictable —
