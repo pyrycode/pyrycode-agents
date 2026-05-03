@@ -650,7 +650,10 @@ async function dispatchToAgent(
   const isCodeReview = agent.name === "code-review";
 
   // Tool access per agent role
-  const baseTools = "Bash,Read,Write,Edit,Glob,Grep,TodoWrite,mcp__qmd__query,mcp__qmd__get,mcp__qmd__multi_get,mcp__qmd__status,mcp__context7__resolve-library-id,mcp__context7__query-docs";
+  // codegraph tools are read-only Go-symbol queries (callers/callees/impact/search/etc) backed
+  // by the .codegraph/ index in pyrycode/. Bootstrap once with `codegraph index .`; subsequent
+  // updates via `codegraph sync` (or the mark-dirty / sync-if-dirty hook pair).
+  const baseTools = "Bash,Read,Write,Edit,Glob,Grep,TodoWrite,mcp__qmd__query,mcp__qmd__get,mcp__qmd__multi_get,mcp__qmd__status,mcp__context7__resolve-library-id,mcp__context7__query-docs,mcp__codegraph__codegraph_search,mcp__codegraph__codegraph_callers,mcp__codegraph__codegraph_callees,mcp__codegraph__codegraph_impact,mcp__codegraph__codegraph_node,mcp__codegraph__codegraph_context,mcp__codegraph__codegraph_files,mcp__codegraph__codegraph_status";
   const needsAgent = ["architect", "code-review"].includes(agent.name);
   let allowedTools = baseTools;
   if (needsAgent) allowedTools += ",Agent";
