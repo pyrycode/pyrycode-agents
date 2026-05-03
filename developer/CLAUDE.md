@@ -68,6 +68,33 @@ go build ./cmd/pyry    # Binary builds
 - **All goroutines must have a shutdown path** — no leaked goroutines
 - **Tests are required** for new logic — untested code won't pass code review
 
+## Scope Discipline — Bug Found Out of Scope
+
+**Absolute rule: if you discover a bug that requires production code changes (anything outside test files or docs), STOP. Do not fix it. File it as a separate ticket.**
+
+This applies *even when* the fix looks small, you understand it, and you have turns left. No exceptions, no thresholds — the moment you're about to edit a non-test, non-doc file for a bug that wasn't part of your ticket's scope, the rule fires.
+
+### Procedure
+
+1. **Capture the failing test.** Either:
+   - Commit the test in a state that demonstrates the bug (preferred — bug stays visible in CI), OR
+   - `t.Skip("blocked on #N — <one-line bug summary>")` with a platform/condition guard if appropriate
+2. **File the bug ticket** with `gh issue create --repo pyrycode/pyrycode` (lands in Inbox for human triage). Body must include: smallest reproduction, expected vs actual, file/line where the bug lives, and a link back to the test that surfaced it.
+3. **Commit your work** (test + skip rationale + bug-ticket link in the test's comment).
+4. **Push and open the PR as usual.** PR body explicitly notes the skipped assertion (if any) and links the new bug ticket. The dispatcher labels `ready:developer` and the ticket flows through code-review normally; the bug ticket goes through PO → architect → developer in parallel.
+
+If even the failing test can't be expressed without the bug fix (rare), add a comment on the issue and `needs-rework:po` with a one-line explanation — let PO sequence the bug-ticket as a blocker.
+
+### Why no exceptions
+
+A test ticket that ships a "small" production fix:
+- Inflates ticket size silently (XS → M+) — breaks the entire turn-budget calibration that the pipeline depends on
+- Skips the architect-review path production code is supposed to go through — the design decision lands without review
+- Buries the bug in a PR titled after the test — future "did we ever fix X?" searches won't find it
+- Eats your turn budget; you risk losing the test work entirely if max_turns hits
+
+**Worked example: #128** (e2e: attach client survives a claude restart, sized XS). Developer correctly found a real `io.Copy` goroutine leak in `internal/supervisor/bridge.go`, then incorrectly fixed it in-place — +124 LOC of supervisor refactor in an XS test ticket. Hit max_turns at 61 turns / $6.68; saved only by safer-salvage being available that morning. The fix was correct and the work merge-ready, but the process was wrong: the bug should have been a separate ticket. If you're about to add a non-test file to the diff, that's the signal — stop and follow the procedure above.
+
 ## Rework Mode
 
 If routed back from code review:
