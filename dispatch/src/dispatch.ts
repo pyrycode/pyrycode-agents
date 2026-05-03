@@ -390,13 +390,31 @@ async function attemptSaferSalvage(opts: {
     }
 
     execSync(`git add -A`, { cwd: opts.agentCwd, stdio: "pipe", timeout: 15_000 });
-    execSync(
-      `git commit -m "WIP: max_turns salvage for #${opts.item.issueNumber}" -m "Auto-committed by dispatcher when ${opts.agent.name} hit max_turns. Build was clean (vet + build); work preserved as draft PR for human triage." -m "Session: ${opts.streamResult.sessionId}"`,
+    // spawnSync with argv (no shell) so commit messages and branch
+    // names containing shell metacharacters can't break the call.
+    // The same pattern is used for `gh pr create` below where the
+    // ticket title (user-influenced text) flows in.
+    const commitResult = spawnSync(
+      "git",
+      [
+        "commit",
+        "-m", `WIP: max_turns salvage for #${opts.item.issueNumber}`,
+        "-m", `Auto-committed by dispatcher when ${opts.agent.name} hit max_turns. Build was clean (vet + build); work preserved as draft PR for human triage.`,
+        "-m", `Session: ${opts.streamResult.sessionId}`,
+      ],
       { cwd: opts.agentCwd, stdio: "pipe", timeout: 15_000 },
     );
-    execSync(`git push -u origin ${opts.branchName}`, {
-      cwd: opts.agentCwd, stdio: "pipe", timeout: 30_000,
-    });
+    if (commitResult.status !== 0) {
+      throw new Error(`git commit failed: ${commitResult.stderr?.toString() || "unknown"}`);
+    }
+
+    const pushResult = spawnSync(
+      "git", ["push", "-u", "origin", opts.branchName],
+      { cwd: opts.agentCwd, stdio: "pipe", timeout: 30_000 },
+    );
+    if (pushResult.status !== 0) {
+      throw new Error(`git push failed: ${pushResult.stderr?.toString() || "unknown"}`);
+    }
 
     const tail = (opts.streamResult.output || "").slice(-2500);
     const prBody = [
@@ -420,10 +438,20 @@ async function attemptSaferSalvage(opts: {
       `This PR is a **draft** — auto-merge is disabled until a reviewer marks it ready (or closes it). Ticket label \`error:max_turns_salvaged\` indicates triage required.`,
     ].join("\n");
 
-    execSync(
-      `gh pr create --draft --title "[max_turns] ${opts.item.title.replace(/"/g, '\\"')}" --head "${opts.branchName}" --base main --body-file -`,
+    const prResult = spawnSync(
+      "gh",
+      [
+        "pr", "create", "--draft",
+        "--title", `[max_turns] ${opts.item.title}`,
+        "--head", opts.branchName,
+        "--base", "main",
+        "--body-file", "-",
+      ],
       { cwd: opts.agentCwd, stdio: ["pipe", "pipe", "pipe"], input: prBody, timeout: 30_000 },
     );
+    if (prResult.status !== 0) {
+      throw new Error(`gh pr create failed: ${prResult.stderr?.toString() || "unknown"}`);
+    }
 
     try { await opts.client.addLabel(opts.item.issueNumber, "error:max_turns_salvaged"); }
     catch (e) { console.warn(`   ⚠️  Failed to add error:max_turns_salvaged label: ${e}`); }
