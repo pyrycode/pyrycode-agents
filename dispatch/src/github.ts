@@ -71,14 +71,21 @@ export class GitHubProjectClient {
    * sub-steps. The dispatcher calls `clearItemsCache()` at the top of
    * each poll cycle so the next fetch is fresh.
    *
-   * **Consistency trade-off:** intra-cycle state changes (e.g.
-   * `runAutoAdvance` moving a ticket Backlog → In Architecture) are
-   * NOT visible to subsequent sub-steps in the same cycle — they see
-   * the snapshot from the cycle's first fetch. The next cycle's clear
-   * + refetch picks up all changes. This matches the snapshot semantic
-   * a single big query would produce; the trade-off is one cycle of
-   * lag for cross-step state propagation, which is acceptable for an
-   * agent pipeline polling on a 60s cadence.
+   * **Consistency trade-off:** intra-cycle mutations (`addLabel`,
+   * `removeLabel`, `updateItemStatus`) do NOT update the cached
+   * snapshot — only `clearItemsCache()` does. Most mutations don't
+   * matter for downstream sub-steps in the same cycle, so the cache
+   * just serves the original snapshot.
+   *
+   * **Exception:** `runAutoAdvance` and `runReworkRouting` (in
+   * `reconcile.ts`) call `clearItemsCache()` themselves after applying
+   * any column- or label-changing mutation. Without this, the
+   * per-agent dispatch loop later in the same cycle would read the
+   * stale snapshot and skip the just-advanced ticket — silently
+   * inverting `pollOrder`'s finish-first priority. The 2026-05-03 09:33
+   * incident (PO dispatched on Backlog #132 instead of code-review on
+   * the freshly-advanced #127) was exactly this. See
+   * `reconcile.test.ts` for the regression test.
    */
   private allItemsCache: Promise<RawItem[]> | null = null;
   /**

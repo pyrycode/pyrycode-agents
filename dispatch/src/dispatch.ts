@@ -7,30 +7,22 @@ import { config } from "dotenv";
 import { GitHubProjectClient } from "./github.js";
 import { AGENTS, type AgentConfig, type ProjectItem } from "./types.js";
 import {
-  AUTO_ADVANCE_RULES,
-  AGENT_COLUMN_MAP,
-  MANUAL_ADVANCE_GATES,
-  MID_PIPELINE_COLUMNS,
   resolveAgentsRepoRoot,
   resolvePyrycodeRepoRoot,
   shouldSkipDispatch,
   isPipelineLabel,
-  isPipelineInFlight,
-  decideAutoAdvance,
-  decideReworkRoutes,
   decideDoneCleanup,
   shouldAutoCommit,
   shouldUseWorktree,
   hasOpenBlockers,
   shouldSkipBlockedFor,
-  extractReworkCount,
-  REWORK_LOOP_THRESHOLD,
   maxTurnsFor,
   shouldAttemptSafeSalvage,
   findReadyPrNumber,
   extractRateLimitInfo,
   shouldAddReadyLabel,
 } from "./lib.js";
+import { runAutoAdvance, runReworkRouting } from "./reconcile.js";
 
 // Load .env from agents repo root (where dispatch lives).
 // __dirname is agents/dispatch/src, so ../.. is agents/ root.
@@ -960,136 +952,10 @@ async function runClosedSweep(client: GitHubProjectClient): Promise<void> {
   }
 }
 
-// Auto-advance moves tickets forward when an agent passes; rework labels
-// route backward (see runReworkRouting). The rule data + helpers live in
-// lib.ts so they can be unit-tested without spinning up the dispatcher.
-
-async function runAutoAdvance(client: GitHubProjectClient): Promise<void> {
-  // Probe in-flight: any non-errored ticket in mid-pipeline columns.
-  let inFlight = false;
-  try {
-    const midItems = await Promise.all(
-      MID_PIPELINE_COLUMNS.map(c => client.getItemsByStatus(c)),
-    );
-    inFlight = isPipelineInFlight(midItems.flat());
-  } catch (error: any) {
-    // Fail-open: a transient GraphQL error shouldn't deadlock the pipeline.
-    console.warn(`   ⚠️  In-flight probe failed; auto-advance proceeds without WIP gate: ${error.message}`);
-  }
-
-  // Fetch items for each unique `from` column referenced by the rule table.
-  // Building once and passing into the pure decision keeps I/O bounded and
-  // the decision deterministic.
-  const fromColumns = [...new Set(AUTO_ADVANCE_RULES.map(r => r.from))];
-  const itemsByColumn = new Map<string, ProjectItem[]>();
-  try {
-    const fetched = await Promise.all(fromColumns.map(c => client.getItemsByStatus(c)));
-    fromColumns.forEach((c, i) => itemsByColumn.set(c, fetched[i]));
-  } catch (error: any) {
-    console.error(`Error fetching auto-advance candidate items: ${error.message}`);
-    return;
-  }
-
-  // Pure decision — see decideAutoAdvance for semantics (gate skip, WIP=1
-  // hold, within-cycle stop-after-first-Backlog-advance, mid-pipeline
-  // advance-all). Test surface lives in lib.test.ts.
-  const decision = decideAutoAdvance(AUTO_ADVANCE_RULES, MANUAL_ADVANCE_GATES, itemsByColumn, inFlight);
-
-  // Apply advances.
-  for (const adv of decision.advances) {
-    try {
-      await client.updateItemStatus(adv.itemId, adv.toColumn);
-      console.log(`   📋 Auto-moved #${adv.issueNumber} from ${adv.fromColumn} → ${adv.toColumn}`);
-    } catch (e) {
-      console.warn(`   ⚠️  Failed to move #${adv.issueNumber} to ${adv.toColumn}: ${e}`);
-    }
-  }
-
-  // Heartbeat logs for diagnostics. Visible in poll output so gates and
-  // holds aren't silent.
-  for (const gate of decision.gatedAwaiting) {
-    const numbers = gate.itemNumbers.map(n => `#${n}`).join(", ");
-    const target = AUTO_ADVANCE_RULES.find(r => r.from === gate.column)?.to ?? "?";
-    console.log(`   🚦 ${gate.column}: ${numbers} awaiting human review (move to ${target} when ready)`);
-  }
-  if (decision.backlogHeld.length > 0) {
-    const numbers = decision.backlogHeld.map(n => `#${n}`).join(", ");
-    console.log(`   🛑 Backlog: ${numbers} held — another ticket is mid-pipeline (WIP=1)`);
-  }
-}
-
-// Backward routing: when an agent adds needs-rework:{target}, move the ticket
-// to the target agent's column and strip the label so the target can pick it
-// up. AGENT_COLUMN_MAP and extractReworkTarget live in lib.ts.
-
-async function runReworkRouting(client: GitHubProjectClient): Promise<void> {
-  // Fetch items in every agent's column (one query per column, in parallel).
-  const itemsByColumn = new Map<string, ProjectItem[]>();
-  for (const agent of AGENTS) {
-    try {
-      const items = await client.getItemsByStatus(agent.column);
-      itemsByColumn.set(agent.column, items);
-    } catch (error: any) {
-      console.error(`Error scanning ${agent.column} for rework routing: ${error.message}`);
-    }
-  }
-
-  // Pure decision — see decideReworkRoutes for semantics (first valid
-  // rework label wins, self-loops skipped, label stripping rules). Test
-  // surface lives in lib.test.ts.
-  const routes = decideReworkRoutes(AGENT_COLUMN_MAP, itemsByColumn);
-
-  // Apply each route: check rework counter (halt at threshold), move
-  // the item, strip stale labels, increment the counter.
-  for (const route of routes) {
-    // Find the source item to read its current rework count.
-    const srcItems = itemsByColumn.get(route.fromColumn) ?? [];
-    const srcItem = srcItems.find(it => it.id === route.itemId);
-    const currentCount = srcItem ? extractReworkCount(srcItem.labels) : 0;
-
-    // Circuit breaker: halt rework routing on tickets that have reached
-    // the threshold. Adds error:rework-loop and a comment for human
-    // attention. Catches the recursive-rework class of failure
-    // (Pyrycode #41 hit 6 dev↔architect rounds before the dev agent
-    // self-halted by intelligence — this makes the halt structural).
-    if (currentCount >= REWORK_LOOP_THRESHOLD) {
-      try {
-        await client.addLabel(route.issueNumber, "error:rework-loop");
-        await client.addComment(
-          route.issueNumber,
-          `## 🛑 Rework loop detected\n\nThis ticket has been rework'd ${currentCount} times across the pipeline. ` +
-          `Halting dispatch to prevent further token burn.\n\n` +
-          `**Triggering label this round:** \`${route.triggerLabel}\`\n` +
-          `**Routed from:** ${route.fromColumn} (would have moved to ${route.toColumn})\n\n` +
-          `Manual intervention required. Inspect prior agent comments to find the root cause; ` +
-          `clear \`error:rework-loop\` and \`rework-count:${currentCount}\` to resume dispatch.`,
-        );
-        console.log(`   🛑 Rework loop: #${route.issueNumber} hit threshold ${REWORK_LOOP_THRESHOLD} — halting dispatch (was: ${route.fromColumn} → ${route.toColumn})`);
-      } catch (e) {
-        console.warn(`   ⚠️  Failed to set rework-loop error on #${route.issueNumber}: ${e}`);
-      }
-      continue;
-    }
-
-    try {
-      await client.updateItemStatus(route.itemId, route.toColumn);
-      for (const label of route.labelsToStrip) {
-        try { await client.removeLabel(route.issueNumber, label); } catch {}
-      }
-      // Bump the rework counter. Strip the old label first if present.
-      if (currentCount > 0) {
-        try { await client.removeLabel(route.issueNumber, `rework-count:${currentCount}`); } catch {}
-      }
-      try { await client.addLabel(route.issueNumber, `rework-count:${currentCount + 1}`); } catch {}
-      const transition = route.fromColumn === route.toColumn
-        ? `cleared at ${route.toColumn}`
-        : `moved ${route.fromColumn} → ${route.toColumn}`;
-      console.log(`   ↩️  Rework: #${route.issueNumber} ${transition} (${route.triggerLabel}, count ${currentCount + 1}/${REWORK_LOOP_THRESHOLD})`);
-    } catch (e) {
-      console.warn(`   ⚠️  Failed to route rework for #${route.issueNumber}: ${e}`);
-    }
-  }
-}
+// Auto-advance and rework routing live in `reconcile.ts` so they're
+// importable from tests without triggering this file's top-level
+// env-var validation. `runAutoAdvance` and `runReworkRouting` here
+// are re-exports for the rest of dispatch.ts to use unchanged.
 
 // Done-cleanup: strip pipeline-state labels from any ticket sitting in
 // the Done column. Runs every maintenance pass alongside auto-advance.
