@@ -1118,7 +1118,14 @@ async function pollLoop(): Promise<void> {
   console.log("🔄 Starting dispatch loop...");
   console.log(`   Watching columns (finish-first): ${pollOrder.map((a) => a.column).join(", ")}`);
 
-  const POLL_INTERVAL = 30_000;
+  // Bumped 30s → 60s on 2026-05-03 after the dispatcher hit GitHub's
+  // GraphQL rate limit (5000 points/hour) overnight. Each cycle issues
+  // ~20 nested-connection queries (~5 points each); 30s polling →
+  // ~12k points/hour, way over budget. 60s halves it; further reduction
+  // comes from the per-cycle cache (next commit) and rate-limit backoff
+  // (after that). Pickup latency for new tickets goes from ~30s to ~60s
+  // — fine for an agent pipeline (not a real-time system).
+  const POLL_INTERVAL = 60_000;
 
   while (true) {
     // Reconcile state FIRST every cycle: closed-sweep, route rework labels,
