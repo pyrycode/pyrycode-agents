@@ -438,6 +438,25 @@ async function attemptSaferSalvage(opts: {
       `This PR is a **draft** — auto-merge is disabled until a reviewer marks it ready (or closes it). Ticket label \`error:max_turns_salvaged\` indicates triage required.`,
     ].join("\n");
 
+    // Order matters: addLabel BEFORE pr create. The label is the
+    // load-bearing safety primitive (it blocks dispatch via
+    // GLOBAL_BLOCK_LABELS); the PR is the artifact. If addLabel
+    // succeeds and pr-create fails, the ticket is still safely
+    // blocked — visible by the label, recoverable manually.
+    // If pr-create succeeded first and addLabel then failed, the
+    // ticket would be unblocked, the next dispatch would find the
+    // open PR via the existing PR-already-exists salvage path, and
+    // auto-advance partial work via `ready:<agent>` — defeating the
+    // entire safer-salvage design. So addLabel throws on failure to
+    // abort the salvage cleanly (caller falls through to error path,
+    // ticket gets `error:<agent>` instead — same shape as a non-salvaged
+    // crash, JSONL-recoverable).
+    try {
+      await opts.client.addLabel(opts.item.issueNumber, "error:max_turns_salvaged");
+    } catch (e) {
+      throw new Error(`addLabel failed (salvage cannot proceed safely without the global block): ${e}`);
+    }
+
     const prResult = spawnSync(
       "gh",
       [
@@ -450,11 +469,10 @@ async function attemptSaferSalvage(opts: {
       { cwd: opts.agentCwd, stdio: ["pipe", "pipe", "pipe"], input: prBody, timeout: 30_000 },
     );
     if (prResult.status !== 0) {
-      throw new Error(`gh pr create failed: ${prResult.stderr?.toString() || "unknown"}`);
+      // Label is already set; ticket is blocked from re-dispatch even
+      // though the PR didn't open. Discoverable via label inspection.
+      throw new Error(`gh pr create failed (label was set; ticket is blocked, recover manually): ${prResult.stderr?.toString() || "unknown"}`);
     }
-
-    try { await opts.client.addLabel(opts.item.issueNumber, "error:max_turns_salvaged"); }
-    catch (e) { console.warn(`   ⚠️  Failed to add error:max_turns_salvaged label: ${e}`); }
 
     try {
       await opts.client.addComment(
@@ -724,7 +742,15 @@ async function dispatchToAgent(
 
     const endTs = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
     const elapsedMin = Math.round((Date.now() - startTime) / 60_000);
-    console.log(`   [${endTs}] ✅ ${agent.name} completed (${elapsedMin}min)`);
+    // On the salvage path, attemptSaferSalvage already printed its own
+    // "💾 Safer salvage: draft PR opened..." line; printing "✅ completed"
+    // here would be misleading (the agent did NOT complete — work was
+    // salvaged mid-run). Output dump still useful for debugging either way.
+    if (!saferSalvaged) {
+      console.log(`   [${endTs}] ✅ ${agent.name} completed (${elapsedMin}min)`);
+    } else {
+      console.log(`   [${endTs}] 💾 ${agent.name} salvaged after ${elapsedMin}min`);
+    }
     console.log(`   Output (last 1000 chars):\n${output.slice(-1000)}`);
 
     // Safety net: commit any uncommitted changes BEFORE worktree cleanup
