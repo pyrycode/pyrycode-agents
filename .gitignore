@@ -11,3 +11,4 @@ dispatch/dist/
 dispatch/logs/
 dispatch/.prompt-*
 dispatch/.system-prompt-*
+.codegraph/
