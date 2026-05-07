@@ -802,12 +802,34 @@ async function dispatchToAgent(
     // worktree produce commits worth pushing; gating on useWorktree avoids
     // the cosmetic "src refspec doesn't match any" failure for PO runs
     // (PO doesn't write code, has no worktree, has no branch to push).
+    //
+    // **Push success is a precondition for treating the agent's verdict as
+    // canonical.** If push fails (typically non-fast-forward — the worktree
+    // is stale relative to origin, often because someone pushed out-of-band
+    // during the run), the agent's commits never reached origin. Downstream
+    // agents would work against pre-run main; code review would judge stale
+    // code. Treat as `error:<agent>`, skip ready-labeling, and bail — human
+    // strips the error label after deciding to retry or salvage. Surfaced
+    // 2026-05-07 when code-review on #155 ran on a stale worktree, FAILed,
+    // tried to push its review comments, hit non-fast-forward, but the
+    // dispatcher continued to apply ready:code-review and auto-advance.
     if (item.issueNumber > 0 && useWorktree) {
       try {
         execSync(`git push -u origin ${branchName}`, { cwd: agentCwd, stdio: "pipe" });
         console.log(`   📤 Pushed ${branchName} to origin`);
-      } catch (e) {
-        console.warn(`   ⚠️  Failed to push ${branchName}: ${e}`);
+      } catch (e: any) {
+        const stderr = e?.stderr?.toString?.() ?? "";
+        const stdout = e?.stdout?.toString?.() ?? "";
+        const detail = [stderr, stdout].filter(Boolean).join("\n").trim() || (e?.message ?? String(e));
+        console.error(`   ❌ Failed to push ${branchName} — agent's commits never reached origin. Treating as error:${agent.name}.`);
+        console.error(`      ${detail.replace(/\n/g, "\n      ")}`);
+        try {
+          await client.addLabel(item.issueNumber, `error:${agent.name}`);
+        } catch {}
+        try {
+          await client.addComment(item.issueNumber, `## ⚠️ Dispatch Error: ${agent.name}\n\n\`git push -u origin ${branchName}\` failed — the agent's commits never reached origin. Common cause: out-of-band push to \`${branchName}\` advanced the remote past this worktree's HEAD (non-fast-forward).\n\nTreating as \`error:${agent.name}\`. To retry: investigate the worktree state, rebase if appropriate, then strip the \`error:${agent.name}\` label.\n\n\`\`\`\n${detail}\n\`\`\``);
+        } catch {}
+        return;
       }
     }
 
