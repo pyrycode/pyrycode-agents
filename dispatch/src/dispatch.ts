@@ -21,6 +21,7 @@ import {
   findReadyPrNumber,
   extractRateLimitInfo,
   shouldAddReadyLabel,
+  selectDispatches,
 } from "./lib.js";
 import { runAutoAdvance, runReworkRouting } from "./reconcile.js";
 
@@ -1040,6 +1041,20 @@ async function pollLoop(): Promise<void> {
   // — fine for an agent pipeline (not a real-time system).
   const POLL_INTERVAL = 60_000;
 
+  // Per-cycle dispatch concurrency cap. Default 2 (modest parallelism without
+  // burning Anthropic rate-limit budget too fast). Set PYRY_MAX_CONCURRENT=1
+  // for legacy WIP=1 finish-first behaviour, or higher when queue depth grows
+  // (Phase 2/3 will increase load). Serial-within-a-dependency-chain is
+  // preserved by `shouldSkipBlockedFor` regardless of this cap — it only
+  // gates parallel dispatches of *unrelated* tickets. Shipped 2026-05-07.
+  const MAX_CONCURRENT = (() => {
+    const raw = process.env.PYRY_MAX_CONCURRENT;
+    if (!raw) return 2;
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) && n > 0 ? n : 2;
+  })();
+  console.log(`   Concurrency cap: ${MAX_CONCURRENT} (PYRY_MAX_CONCURRENT)`);
+
   while (true) {
     // Drain check: exit cleanly before starting the next cycle if SIGTERM
     // was received. Placement at top of loop means a cycle that's already
@@ -1105,90 +1120,74 @@ async function pollLoop(): Promise<void> {
     await runAutoAdvance(client);
     await runDoneCleanup(client);
 
-    // WIP=1: dispatch exactly one agent per cycle, then restart.
-    // The finish-first poll order ensures the most-advanced ticket is always processed first.
-    // This prevents round-robin (all tickets through architect, then all through developer)
-    // and instead completes each ticket end-to-end before starting the next.
+    // Concurrency model: WIP=N (default 2 via PYRY_MAX_CONCURRENT env var).
+    // Serial within a dependency chain is preserved by `shouldSkipBlockedFor`
+    // (open-blocker check, exercised inside selectDispatches): a ticket whose
+    // blocker is OPEN — including in-flight under wip:<agent> on a still-open
+    // issue — is gated. Two unrelated tickets (neither blocks the other) can
+    // run simultaneously. Replaces the previous WIP=1 finish-first loop.
     let dispatched = false;
-
+    const itemsByColumn = new Map<string, ProjectItem[]>();
     for (const agent of pollOrder) {
-      if (dispatched) break;
-
       try {
-        const items = await client.getItemsByStatus(agent.column);
-
-        for (const item of items) {
-          // Label-based dispatch: skip if any of ready:/needs-rework:/wip:/error:
-          // is already set for THIS agent. See shouldSkipDispatch in lib.ts.
-          if (shouldSkipDispatch(item.labels, agent.name)) {
-            continue;
-          }
-
-          // GitHub-native dependency check: skip if blockers are open
-          // AND this agent's work depends on the blocker. PO bypasses
-          // this — refinement (user story shape, AC, size) is cheap prep
-          // work that doesn't depend on the blocker's implementation, so
-          // queueing PO on blocked tickets means they're ready to flow
-          // the moment the blocker resolves. See `shouldSkipBlockedFor`.
-          if (item.issueNumber > 0 && shouldSkipBlockedFor(agent.name, item.blockedBy)) {
-            const open = item.blockedBy.filter(b => b.state === "OPEN").map(b => `#${b.number}`).join(", ");
-            console.log(`   🔒 #${item.issueNumber} blocked by ${open} — skipping ${agent.name} dispatch`);
-            continue;
-          }
-
-          const wipLabel = `wip:${agent.name}`;
-
-          // Remove stale pipeline labels from previous agents before dispatching.
-          for (const label of item.labels) {
-            if (isPipelineLabel(label)) {
-              try {
-                await client.removeLabel(item.issueNumber, label);
-                console.log(`   🏷️  Removed stale ${label} from #${item.issueNumber}`);
-              } catch {}
-            }
-          }
-          // Also remove legacy labels if present
-          for (const legacy of ["ready-for-review", "needs-rework"]) {
-            if (item.labels.includes(legacy)) {
-              try {
-                await client.removeLabel(item.issueNumber, legacy);
-                console.log(`   🏷️  Removed legacy ${legacy} from #${item.issueNumber}`);
-              } catch {}
-            }
-          }
-
-          // Mark ticket as in-progress before running agent
-          try {
-            await client.addLabel(item.issueNumber, wipLabel);
-            console.log(`   🏷️  Added ${wipLabel} to #${item.issueNumber}`);
-          } catch {}
-
-          await dispatchToAgent(agent, item, client);
-
-          // Remove wip label after agent completes (ready/needs-rework label added inside dispatchToAgent)
-          try {
-            await client.removeLabel(item.issueNumber, wipLabel);
-          } catch {}
-
-          // Sweep closed-but-not-Done first (parent of a split, user-closed
-          // tickets), then route rework labels (backward), then auto-advance
-          // (forward), then strip pipeline labels off Done tickets. Order
-          // matters: closed → done before route/advance so we never waste
-          // an op on a closed ticket; Done-cleanup last so it sees tickets
-          // brought into Done by closed-sweep AND auto-advance this cycle.
-          await runClosedSweep(client);
-          await runReworkRouting(client);
-          await runAutoAdvance(client);
-          await runDoneCleanup(client);
-
-          // Break both loops — restart from the most-advanced column
-          dispatched = true;
-          break;
-        }
+        itemsByColumn.set(agent.column, await client.getItemsByStatus(agent.column));
       } catch (error: any) {
         console.error(`Error polling ${agent.column}: ${error.message}`);
+        itemsByColumn.set(agent.column, []);
       }
     }
+
+    const candidates = selectDispatches({ itemsByColumn, pollOrder, maxConcurrent: MAX_CONCURRENT });
+    dispatched = candidates.length > 0;
+
+    if (candidates.length > 0) {
+      console.log(`   🚦 Dispatching ${candidates.length} agent(s) this cycle (cap ${MAX_CONCURRENT}): ${candidates.map(c => `${c.agent.name}#${c.item.issueNumber}`).join(", ")}`);
+    }
+
+    // Pre-dispatch mutations (sequential — fast, ~5 ops per candidate, mostly
+    // cache reads after the first invalidation): strip stale pipeline labels,
+    // then add wip:<agent>. Done before any dispatchToAgent fires so a slow
+    // child can't race with another candidate's prep on the same item.
+    for (const { agent, item } of candidates) {
+      const wipLabel = `wip:${agent.name}`;
+      for (const label of item.labels) {
+        if (isPipelineLabel(label)) {
+          try {
+            await client.removeLabel(item.issueNumber, label);
+            console.log(`   🏷️  Removed stale ${label} from #${item.issueNumber}`);
+          } catch {}
+        }
+      }
+      for (const legacy of ["ready-for-review", "needs-rework"]) {
+        if (item.labels.includes(legacy)) {
+          try {
+            await client.removeLabel(item.issueNumber, legacy);
+            console.log(`   🏷️  Removed legacy ${legacy} from #${item.issueNumber}`);
+          } catch {}
+        }
+      }
+      try {
+        await client.addLabel(item.issueNumber, wipLabel);
+        console.log(`   🏷️  Added ${wipLabel} to #${item.issueNumber}`);
+      } catch {}
+    }
+
+    // Concurrent dispatch. Each candidate runs to completion independently;
+    // wip:<agent> removal is in the per-dispatch finally block so a thrown
+    // error doesn't leave a stranded wip on this ticket. Promise.allSettled
+    // means one failure doesn't abort the others.
+    await Promise.allSettled(candidates.map(({ agent, item }) =>
+      (async () => {
+        const wipLabel = `wip:${agent.name}`;
+        try {
+          await dispatchToAgent(agent, item, client);
+        } catch (error: any) {
+          console.error(`Error dispatching ${agent.name} on #${item.issueNumber}: ${error.message}`);
+        } finally {
+          try { await client.removeLabel(item.issueNumber, wipLabel); } catch {}
+        }
+      })()
+    ));
 
     // Maintenance: closed-sweep, route rework labels, auto-advance, and
     // strip pipeline labels off Done tickets. Runs even when nothing was

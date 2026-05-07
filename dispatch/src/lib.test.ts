@@ -46,6 +46,7 @@ import {
   findReadyPrNumber,
   extractRateLimitInfo,
   shouldAddReadyLabel,
+  selectDispatches,
 } from "./lib.js";
 
 describe("resolveAgentsRepoRoot", () => {
@@ -1286,6 +1287,149 @@ describe("findReadyPrNumber", () => {
     // is "treat as draft when unclear" — i.e., return null for missing
     // isDraft. Lock that in.
     assert.equal(findReadyPrNumber('[{"number": 42}]'), null);
+  });
+});
+
+describe("selectDispatches", () => {
+  // Concurrency model: WIP=N (default 2), serial within a dependency chain
+  // (preserved by shouldSkipBlockedFor's open-blocker check), parallel across
+  // unrelated tickets. Replaces WIP=1 globally.
+  //
+  // Pure function over a snapshot. Caller (dispatch.ts poll loop) does the
+  // mutations + actual claude spawn.
+
+  const POLL_ORDER = [...AGENTS].reverse();
+  const PO = POLL_ORDER.find(a => a.name === "po")!;
+  const ARCH = POLL_ORDER.find(a => a.name === "architect")!;
+  const DEV = POLL_ORDER.find(a => a.name === "developer")!;
+
+  const item = (n: number, labels: string[] = [], blockedBy: { number: number; state: "OPEN" | "CLOSED" }[] = []) =>
+    ({ id: `item-${n}`, issueNumber: n, labels, blockedBy });
+
+  test("empty input → empty output", () => {
+    const r = selectDispatches({ itemsByColumn: new Map(), pollOrder: POLL_ORDER, maxConcurrent: 2 });
+    assert.deepEqual(r, []);
+  });
+
+  test("maxConcurrent=0 → empty output even with eligible items", () => {
+    const r = selectDispatches({
+      itemsByColumn: new Map([["Backlog", [item(1)]]]),
+      pollOrder: POLL_ORDER,
+      maxConcurrent: 0,
+    });
+    assert.deepEqual(r, []);
+  });
+
+  test("single eligible ticket in PO column → one candidate", () => {
+    const r = selectDispatches({
+      itemsByColumn: new Map([["Backlog", [item(1)]]]),
+      pollOrder: POLL_ORDER,
+      maxConcurrent: 2,
+    });
+    assert.equal(r.length, 1);
+    assert.equal(r[0].agent.name, "po");
+    assert.equal(r[0].item.issueNumber, 1);
+  });
+
+  test("multiple eligible Backlog items → caps at maxConcurrent (parallel POs allowed)", () => {
+    const r = selectDispatches({
+      itemsByColumn: new Map([["Backlog", [item(1), item(2), item(3)]]]),
+      pollOrder: POLL_ORDER,
+      maxConcurrent: 2,
+    });
+    assert.equal(r.length, 2);
+    assert.equal(r[0].agent.name, "po");
+    assert.equal(r[1].agent.name, "po");
+    assert.deepEqual(r.map(c => c.item.issueNumber), [1, 2]);
+  });
+
+  test("eligible items across columns → picked in pollOrder (most-advanced first)", () => {
+    // pollOrder is [...AGENTS].reverse() = documentation, code-review, developer, architect, po
+    const r = selectDispatches({
+      itemsByColumn: new Map([
+        ["Backlog", [item(1)]],          // PO eligible
+        ["In Development", [item(2)]],   // Developer eligible
+      ]),
+      pollOrder: POLL_ORDER,
+      maxConcurrent: 2,
+    });
+    assert.equal(r.length, 2);
+    // Developer comes before PO in pollOrder (more advanced)
+    assert.equal(r[0].agent.name, "developer");
+    assert.equal(r[1].agent.name, "po");
+  });
+
+  test("ineligible labels filter out (wip:* / ready:* / needs-rework:* / error:*)", () => {
+    const r = selectDispatches({
+      itemsByColumn: new Map([
+        ["Backlog", [
+          item(1, ["wip:po"]),                        // skipped (in flight)
+          item(2, ["ready:po"]),                      // skipped (already done)
+          item(3, ["error:max_turns_salvaged"]),      // skipped (global block)
+          item(4, []),                                // eligible
+        ]],
+      ]),
+      pollOrder: POLL_ORDER,
+      maxConcurrent: 5,
+    });
+    assert.equal(r.length, 1);
+    assert.equal(r[0].item.issueNumber, 4);
+  });
+
+  test("OPEN blocker on developer ticket → skipped (PO bypasses blocker check)", () => {
+    const r = selectDispatches({
+      itemsByColumn: new Map([
+        ["Backlog", [item(1, [], [{ number: 99, state: "OPEN" }])]],          // PO bypasses
+        ["In Development", [item(2, [], [{ number: 99, state: "OPEN" }])]],    // Developer skipped
+      ]),
+      pollOrder: POLL_ORDER,
+      maxConcurrent: 2,
+    });
+    // Only PO eligible (PO bypasses blockers per shouldSkipBlockedFor); developer skipped
+    assert.equal(r.length, 1);
+    assert.equal(r[0].agent.name, "po");
+    assert.equal(r[0].item.issueNumber, 1);
+  });
+
+  test("CLOSED blocker → not skipped", () => {
+    const r = selectDispatches({
+      itemsByColumn: new Map([
+        ["In Development", [item(1, [], [{ number: 99, state: "CLOSED" }])]],
+      ]),
+      pollOrder: POLL_ORDER,
+      maxConcurrent: 2,
+    });
+    assert.equal(r.length, 1);
+    assert.equal(r[0].agent.name, "developer");
+  });
+
+  test("issueNumber=0 (synthetic items) skips blocker check", () => {
+    // Pre-Inbox synthetic items use issueNumber=0; the blocker check is bypassed
+    // there because they aren't real GitHub issues yet.
+    const r = selectDispatches({
+      itemsByColumn: new Map([
+        ["Backlog", [item(0, [], [{ number: 99, state: "OPEN" }])]],
+      ]),
+      pollOrder: POLL_ORDER,
+      maxConcurrent: 2,
+    });
+    assert.equal(r.length, 1);
+    assert.equal(r[0].item.issueNumber, 0);
+  });
+
+  test("partial cap fill across columns when fewer eligible than maxConcurrent", () => {
+    const r = selectDispatches({
+      itemsByColumn: new Map([
+        ["In Architecture", [item(1)]],
+        ["Backlog", [item(2)]],
+      ]),
+      pollOrder: POLL_ORDER,
+      maxConcurrent: 5,  // far higher than available
+    });
+    assert.equal(r.length, 2);
+    // Architect column comes before Backlog in pollOrder (more advanced)
+    assert.equal(r[0].agent.name, "architect");
+    assert.equal(r[1].agent.name, "po");
   });
 });
 
