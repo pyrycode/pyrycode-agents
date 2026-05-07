@@ -22,6 +22,7 @@ import {
   extractRateLimitInfo,
   shouldAddReadyLabel,
   selectDispatches,
+  decideBranchSetup,
 } from "./lib.js";
 import { runAutoAdvance, runReworkRouting } from "./reconcile.js";
 
@@ -537,7 +538,10 @@ async function dispatchToAgent(
       return;
     }
 
-    // Create/update the feature branch ref WITHOUT checking it out in the main repo
+    // Create/update the feature branch ref WITHOUT checking it out in the main repo.
+    // Origin is the source of truth — if local is behind, fast-forward; if local has
+    // commits not in origin, that's an integrity error (prior dispatch failed to push)
+    // and requires human triage. See `decideBranchSetup` in lib.ts for the matrix.
     const localExists = (() => {
       try {
         execSync(`git rev-parse --verify ${branchName}`, { cwd: repoRoot, stdio: "pipe" });
@@ -551,19 +555,66 @@ async function dispatchToAgent(
       } catch { return false; }
     })();
 
+    let localEqualsOrigin: boolean | undefined;
+    let localIsAncestorOfOrigin: boolean | undefined;
+    if (localExists && remoteExists) {
+      try {
+        const localSha = execSync(`git rev-parse ${branchName}`, { cwd: repoRoot, encoding: "utf-8" }).trim();
+        const originSha = execSync(`git rev-parse origin/${branchName}`, { cwd: repoRoot, encoding: "utf-8" }).trim();
+        localEqualsOrigin = localSha === originSha;
+        if (!localEqualsOrigin) {
+          // `git merge-base --is-ancestor A B` exits 0 if A is an ancestor of B.
+          try {
+            execSync(`git merge-base --is-ancestor ${branchName} origin/${branchName}`, { cwd: repoRoot, stdio: "pipe" });
+            localIsAncestorOfOrigin = true;
+          } catch {
+            localIsAncestorOfOrigin = false;
+          }
+        }
+      } catch (e) {
+        // Couldn't compute SHAs — defensive defaults make decideBranchSetup abort.
+        console.warn(`   ⚠️  Failed to compare ${branchName} with origin/${branchName}: ${e}`);
+      }
+    }
+
+    const branchAction = decideBranchSetup({
+      localExists,
+      remoteExists,
+      localEqualsOrigin,
+      localIsAncestorOfOrigin,
+    });
+
     try {
-      if (localExists) {
-        console.log(`   📌 Reusing local branch ${branchName}`);
-      } else if (remoteExists) {
-        execSync(`git branch ${branchName} origin/${branchName}`, { cwd: repoRoot, stdio: "pipe" });
-        console.log(`   📌 Recovered branch ${branchName} from origin`);
-      } else {
-        execSync(`git branch ${branchName} main`, { cwd: repoRoot, stdio: "pipe" });
-        console.log(`   🌿 Created branch ${branchName}`);
+      switch (branchAction) {
+        case "create-from-main":
+          execSync(`git branch ${branchName} main`, { cwd: repoRoot, stdio: "pipe" });
+          console.log(`   🌿 Created branch ${branchName} from main`);
+          break;
+        case "create-from-origin":
+          execSync(`git branch ${branchName} origin/${branchName}`, { cwd: repoRoot, stdio: "pipe" });
+          console.log(`   📌 Recovered branch ${branchName} from origin`);
+          break;
+        case "reuse-local-no-remote":
+          console.log(`   📌 Reusing local branch ${branchName} (no remote yet)`);
+          break;
+        case "reuse-local-already-synced":
+          console.log(`   📌 Reusing local branch ${branchName} (already at origin)`);
+          break;
+        case "fast-forward-from-origin":
+          execSync(`git branch -f ${branchName} origin/${branchName}`, { cwd: repoRoot, stdio: "pipe" });
+          console.log(`   🚀 Fast-forwarded local ${branchName} to origin/${branchName}`);
+          break;
+        case "abort-local-ahead-of-origin": {
+          const msg = `Local \`${branchName}\` has commits not present on origin/${branchName}. A prior dispatch likely failed to push and we didn't notice. Manual triage: investigate the local branch (\`git log origin/${branchName}..${branchName}\`), decide whether to push the missing commits or discard them, then strip \`error:${agent.name}\` to retry.`;
+          console.error(`   ❌ ${msg}`);
+          await client.addComment(item.issueNumber, `## ⚠️ Dispatch Error: ${agent.name}\n\n${msg}`);
+          try { await client.addLabel(item.issueNumber, `error:${agent.name}`); } catch {}
+          return;
+        }
       }
     } catch (e) {
       console.error(`   ❌ Git branch setup failed: ${e}`);
-      await client.addComment(item.issueNumber, `## ⚠️ Dispatch Error: ${agent.name}\n\nFailed to set up branch \`${branchName}\`. Manual intervention required.\n\n\`\`\`\n${e}\n\`\`\``);
+      await client.addComment(item.issueNumber, `## ⚠️ Dispatch Error: ${agent.name}\n\nFailed to set up branch \`${branchName}\` (action: ${branchAction}). Manual intervention required.\n\n\`\`\`\n${e}\n\`\`\``);
       try { await client.addLabel(item.issueNumber, `error:${agent.name}`); } catch {}
       return;
     }

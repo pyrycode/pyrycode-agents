@@ -751,6 +751,52 @@ export function selectDispatches<T extends DecisionItem>(opts: {
   return out;
 }
 
+// --------- Worktree branch setup ---------
+
+/**
+ * Decide what to do with a feature branch before creating its worktree.
+ *
+ * The dispatcher's earlier behaviour was: if the local ref already exists
+ * (from a prior dispatch), reuse it AS-IS. That breaks when someone pushes
+ * to `origin/<branch>` out-of-band between dispatches (e.g., manual triage
+ * worktree, hot-fix). Local stayed stale, worktree got the old commit, the
+ * agent ran on out-of-date code. Surfaced 2026-05-07 (#155 code-review).
+ *
+ * Origin is the source of truth: if local is behind, fast-forward; if
+ * local has commits not in origin, that's an integrity error (a prior
+ * dispatch failed to push and we never noticed) and requires human triage.
+ */
+export type BranchSetupAction =
+  /** Neither local nor remote exists. Create local from `main`. */
+  | "create-from-main"
+  /** Only remote exists. Create local from `origin/<branch>`. */
+  | "create-from-origin"
+  /** Local exists but no remote. Reuse local; first push will create origin. */
+  | "reuse-local-no-remote"
+  /** Both exist and local SHA == origin SHA. Reuse local (no-op sync). */
+  | "reuse-local-already-synced"
+  /** Both exist; local is a strict ancestor of origin. Fast-forward local. */
+  | "fast-forward-from-origin"
+  /** Both exist; local has commits not in origin (or diverged). Abort. */
+  | "abort-local-ahead-of-origin";
+
+export function decideBranchSetup(opts: {
+  localExists: boolean;
+  remoteExists: boolean;
+  /** True iff local SHA equals origin SHA. Required when both exist. */
+  localEqualsOrigin?: boolean;
+  /** True iff local is a strict ancestor of origin (fast-forwardable).
+   *  Required when both exist and SHAs differ. */
+  localIsAncestorOfOrigin?: boolean;
+}): BranchSetupAction {
+  if (!opts.localExists && !opts.remoteExists) return "create-from-main";
+  if (!opts.localExists) return "create-from-origin";
+  if (!opts.remoteExists) return "reuse-local-no-remote";
+  if (opts.localEqualsOrigin) return "reuse-local-already-synced";
+  if (opts.localIsAncestorOfOrigin) return "fast-forward-from-origin";
+  return "abort-local-ahead-of-origin";
+}
+
 // --------- Path resolution ---------
 
 /**

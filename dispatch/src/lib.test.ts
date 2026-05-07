@@ -47,6 +47,7 @@ import {
   extractRateLimitInfo,
   shouldAddReadyLabel,
   selectDispatches,
+  decideBranchSetup,
 } from "./lib.js";
 
 describe("resolveAgentsRepoRoot", () => {
@@ -1430,6 +1431,87 @@ describe("selectDispatches", () => {
     // Architect column comes before Backlog in pollOrder (more advanced)
     assert.equal(r[0].agent.name, "architect");
     assert.equal(r[1].agent.name, "po");
+  });
+});
+
+describe("decideBranchSetup", () => {
+  // Origin is the source of truth: if local is behind, fast-forward;
+  // if local has commits not in origin, abort (integrity error from a
+  // prior dispatch's failed push). Surfaced 2026-05-07 (#155 stale-worktree).
+
+  test("neither exists → create-from-main", () => {
+    assert.equal(
+      decideBranchSetup({ localExists: false, remoteExists: false }),
+      "create-from-main",
+    );
+  });
+
+  test("only remote exists → create-from-origin", () => {
+    assert.equal(
+      decideBranchSetup({ localExists: false, remoteExists: true }),
+      "create-from-origin",
+    );
+  });
+
+  test("only local exists → reuse-local-no-remote", () => {
+    // Edge case: branch was created locally and never pushed yet.
+    // Reuse it; the dispatcher's later push will create origin.
+    assert.equal(
+      decideBranchSetup({ localExists: true, remoteExists: false }),
+      "reuse-local-no-remote",
+    );
+  });
+
+  test("both exist, local == origin → reuse-local-already-synced", () => {
+    assert.equal(
+      decideBranchSetup({
+        localExists: true,
+        remoteExists: true,
+        localEqualsOrigin: true,
+      }),
+      "reuse-local-already-synced",
+    );
+  });
+
+  test("both exist, local is ancestor of origin → fast-forward-from-origin", () => {
+    // The case that matters: someone pushed to origin out-of-band
+    // (manual triage commit, hot-fix push) between dispatches. Local
+    // is behind, fast-forward catches up.
+    assert.equal(
+      decideBranchSetup({
+        localExists: true,
+        remoteExists: true,
+        localEqualsOrigin: false,
+        localIsAncestorOfOrigin: true,
+      }),
+      "fast-forward-from-origin",
+    );
+  });
+
+  test("both exist, local NOT ancestor of origin → abort-local-ahead-of-origin", () => {
+    // Local has commits that aren't in origin. Per the dispatcher's flow,
+    // this means a prior dispatch failed to push and we didn't notice.
+    // Don't blow them away — abort and surface for human triage.
+    assert.equal(
+      decideBranchSetup({
+        localExists: true,
+        remoteExists: true,
+        localEqualsOrigin: false,
+        localIsAncestorOfOrigin: false,
+      }),
+      "abort-local-ahead-of-origin",
+    );
+  });
+
+  test("local exists, remote exists, SHA-equality flag missing → treats as ahead (defensive)", () => {
+    // If the caller forgot to compute the equality/ancestor flags,
+    // default to abort rather than silently force-update local.
+    // The "both exist + missing flags" code path shouldn't happen in
+    // production, but we lock in the safe default.
+    assert.equal(
+      decideBranchSetup({ localExists: true, remoteExists: true }),
+      "abort-local-ahead-of-origin",
+    );
   });
 });
 
