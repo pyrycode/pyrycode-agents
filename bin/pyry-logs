@@ -1,0 +1,36 @@
+#!/bin/sh
+# Tail dispatcher per-agent logs.
+#   pyry-logs            → tail the most recent log
+#   pyry-logs -a         → tail all logs (interleaved)
+#   pyry-logs <ticket>   → tail logs for a specific ticket (e.g. pyry-logs 155)
+SCRIPT_DIR="$(cd -P "$(dirname "$0")" && pwd)"
+LOG_DIR="$SCRIPT_DIR/../dispatch/logs"
+
+if [ ! -d "$LOG_DIR" ]; then
+  echo "no log dir at $LOG_DIR — has the dispatcher ever run?" >&2
+  exit 1
+fi
+
+case "$1" in
+  -a|--all)
+    exec tail -F "$LOG_DIR"/*.log
+    ;;
+  "")
+    LATEST=$(ls -t "$LOG_DIR"/*.log 2>/dev/null | head -1)
+    if [ -z "$LATEST" ]; then
+      echo "no log files in $LOG_DIR yet" >&2
+      exit 1
+    fi
+    echo "tailing $LATEST"
+    exec tail -F "$LATEST"
+    ;;
+  *)
+    # Ticket-number filter
+    MATCHES=$(ls -t "$LOG_DIR"/*"#$1".log 2>/dev/null)
+    if [ -z "$MATCHES" ]; then
+      echo "no logs matching #$1 in $LOG_DIR" >&2
+      exit 1
+    fi
+    exec tail -F $MATCHES
+    ;;
+esac

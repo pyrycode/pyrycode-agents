@@ -1,0 +1,6 @@
+#!/bin/sh
+# Run the dispatcher's TypeScript typecheck (`tsc --noEmit`).
+set -e
+SCRIPT_DIR="$(cd -P "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR/../dispatch"
+exec pnpm typecheck

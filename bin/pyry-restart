@@ -1,0 +1,28 @@
+#!/bin/sh
+# Graceful restart: drain → wait for the in-flight dispatch to finish → start fresh.
+# Note: a long developer run can make "wait" take 20+ minutes. To force-stop,
+# use `kill <pid>` directly (with the cleanup recipe in Pipeline.md).
+set -e
+SCRIPT_DIR="$(cd -P "$(dirname "$0")" && pwd)"
+
+if ! pgrep -f "tsx.*src/dispatch.ts" >/dev/null; then
+  echo "no dispatcher running — starting fresh"
+  exec "$SCRIPT_DIR/pyry-start"
+fi
+
+echo "draining current dispatcher..."
+pkill -TERM -f "tsx.*src/dispatch.ts"
+
+# Poll until process exits. 30 min cap so we don't block forever on a stuck run.
+WAITED=0
+while pgrep -f "tsx.*src/dispatch.ts" >/dev/null; do
+  if [ "$WAITED" -ge 1800 ]; then
+    echo "still running after 30 min — bailing. Force-stop with: pkill -KILL -f dispatch.ts"
+    exit 1
+  fi
+  sleep 5
+  WAITED=$((WAITED + 5))
+done
+
+echo "drain complete in ${WAITED}s — starting fresh"
+exec "$SCRIPT_DIR/pyry-start"

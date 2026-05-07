@@ -1,0 +1,7 @@
+#!/bin/sh
+# Start the pyrycode dispatcher in the foreground.
+# Pass-through any args to pnpm (e.g. `pyry-start --silent`).
+set -e
+SCRIPT_DIR="$(cd -P "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR/../dispatch"
+exec pnpm start "$@"

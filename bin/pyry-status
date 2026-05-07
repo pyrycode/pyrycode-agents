@@ -1,0 +1,15 @@
+#!/bin/sh
+# Report whether the dispatcher is running, and on which Node binary.
+# Exit 0 when running, 1 when stopped — usable in scripts.
+PID=$(pgrep -f "tsx.*src/dispatch.ts" | head -1)
+if [ -z "$PID" ]; then
+  echo "stopped"
+  exit 1
+fi
+
+# Surface the dispatcher's effective Node path (catches the
+# Homebrew-vs-nvm class of bug from 2026-05-03).
+NODE_BIN=$(ps -o command= -p "$PID" | awk '{print $1}')
+START=$(ps -o lstart= -p "$PID" | sed 's/^ *//')
+echo "running   pid=$PID  started=$START"
+echo "          node=$NODE_BIN"
