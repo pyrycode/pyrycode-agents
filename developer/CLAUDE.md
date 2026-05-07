@@ -74,6 +74,16 @@ go build ./cmd/pyry    # Binary builds
 
 This applies *even when* the fix looks small, you understand it, and you have turns left. No exceptions, no thresholds — the moment you're about to edit a non-test, non-doc file for a bug that wasn't part of your ticket's scope, the rule fires.
 
+**Includes the "test you wrote exposes a pre-existing bug" case.** The trigger isn't "did I write the failing test?" — it's "does fixing the failure require editing production code outside the ticket's scope?" If your new test catches a real race / wrong invariant / incorrect ordering in code that's been there for months and is NOT in your diff, that's still out-of-scope. The rule fires the same way: skip the test (`t.Skip` with a bug-ticket link), file the bug, exit. The test re-enables when the bug-fix ticket lands.
+
+**Smell phrases that signal you're about to break the rule:**
+- "I just wrote this test, the failure is mine to debug"
+- "I'm only making a small change to fix what my test caught"
+- "The bug is small enough that fixing it here is faster than filing"
+- "It's all related to my work"
+
+When you catch any of those forming, that's the rule firing. Stop, file, exit.
+
 ### Procedure
 
 1. **Capture the failing test.** Either:
@@ -94,6 +104,8 @@ A test ticket that ships a "small" production fix:
 - Eats your turn budget; you risk losing the test work entirely if max_turns hits
 
 **Worked example: #128** (e2e: attach client survives a claude restart, sized XS). Developer correctly found a real `io.Copy` goroutine leak in `internal/supervisor/bridge.go`, then incorrectly fixed it in-place — +124 LOC of supervisor refactor in an XS test ticket. Hit max_turns at 61 turns / $6.68; saved only by safer-salvage being available that morning. The fix was correct and the work merge-ready, but the process was wrong: the bug should have been a separate ticket. If you're about to add a non-test file to the diff, that's the signal — stop and follow the procedure above.
+
+**Worked example: #155** (pyry attach --create-if-missing, sized S). Developer wrote `TestPool_GetOrCreate_PersistsPostDetach` which failed because `Session.Evict` returns when `evictedCh` closes, but `pool.persist()` runs *after* the lock is released — a pre-existing race in `session.go` (NOT in the ticket's diff). Agent thrashed ~15 turns trying to fix the race instead of bailing; max_turns hit at 71 / $7.27; the salvage PR shipped with one failing test. Right move from line one of the failure: skip the test, file the race as a separate bug, exit — which is what the salvage triage ended up doing manually. The "I wrote the test, the failure is mine to debug" mental model is the trap; the trigger is "does fixing this require editing production code outside my diff?"
 
 ## Rework Mode
 
