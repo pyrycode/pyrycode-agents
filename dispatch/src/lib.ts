@@ -53,19 +53,21 @@ export const AUTO_ADVANCE_RULES: AdvanceRule[] = [
 export const MANUAL_ADVANCE_GATES: ReadonlySet<string> = new Set<string>();
 
 /**
- * Columns considered "mid-pipeline" for the strict-WIP=1 rule. A ticket
- * sitting in any of these columns is in flight: actively progressing
- * through agents, awaiting human gate, or transiently in rework.
+ * Columns considered "mid-pipeline" for the WIP cap. A ticket sitting in
+ * any of these columns is in flight: actively progressing through agents,
+ * awaiting human gate, or transiently in rework.
  *
  * Backlog and Inbox are not mid-pipeline (work hasn't started). Done is
  * not mid-pipeline (work is complete).
  *
- * Used by `runAutoAdvance` to hold Backlog → In Architecture promotions
- * when something is already in flight, so one ticket flows end-to-end
- * before the next starts.
+ * Used by `runAutoAdvance` to compute available capacity for Backlog →
+ * In Architecture promotions: `capacity = max(0, maxConcurrent - inFlight)`.
+ * When the pipeline is at capacity, eligible Backlog tickets are held;
+ * otherwise up to `capacity` of them advance per cycle, in board-position
+ * order (top-of-column first).
  *
  * Tickets carrying any `error:*` label are excluded from the in-flight
- * check by the caller — they're stuck on exceptional human action and
+ * count by the caller — they're stuck on exceptional human action and
  * shouldn't block unrelated work. Adding an `error:*` label is the
  * escape hatch for parking a normal-path ticket too (e.g. a long
  * human-gate delay where you want unrelated tickets to flow).
@@ -78,8 +80,8 @@ export const MID_PIPELINE_COLUMNS: readonly string[] = [
 ];
 
 /**
- * True if any of the given mid-pipeline items is "in flight" — i.e. should
- * count toward the WIP=1 cap and hold new tickets in Backlog.
+ * Count of "in flight" tickets among the given mid-pipeline items —
+ * the number of pipeline threads currently consuming WIP capacity.
  *
  * Counts:
  *   - tickets actively running, awaiting human gate, or transiently in rework
@@ -95,14 +97,25 @@ export const MID_PIPELINE_COLUMNS: readonly string[] = [
  * Pure function over the items the caller already collected from
  * MID_PIPELINE_COLUMNS — no I/O, no side effects, easy to unit-test.
  */
-export function isPipelineInFlight(
+export function countPipelineInFlight(
   items: { issueNumber: number; labels: string[] }[],
-): boolean {
-  return items.some(
+): number {
+  return items.filter(
     item =>
       item.issueNumber > 0 &&
       !item.labels.some(l => l.startsWith("error:")),
-  );
+  ).length;
+}
+
+/**
+ * True if any item in the mid-pipeline column set counts as in-flight.
+ * Thin wrapper over `countPipelineInFlight`; kept as a boolean alias
+ * for callers that don't need the count.
+ */
+export function isPipelineInFlight(
+  items: { issueNumber: number; labels: string[] }[],
+): boolean {
+  return countPipelineInFlight(items) > 0;
 }
 
 // --------- Auto-advance decision ---------
@@ -130,41 +143,50 @@ export interface AutoAdvanceDecision {
   advances: AdvanceAction[];
   /** Items currently sitting at a human gate (logged as 🚦 awaiting review). */
   gatedAwaiting: { column: string; itemNumbers: number[] }[];
-  /** Items in Backlog held by WIP=1 (logged as 🛑 held). */
+  /** Items in Backlog held because the pipeline is at capacity
+   *  (`inFlightCount >= maxConcurrent`); logged as 🛑 held. */
   backlogHeld: number[];
 }
 
 /**
  * Pure decision function for `runAutoAdvance`. Given the rule table, gate
- * set, current items in each `from` column, and whether the pipeline is
- * already in flight, return the list of advances to perform plus the
- * diagnostic info the caller needs to log gate/hold heartbeats.
+ * set, current items in each `from` column, the count of pipeline threads
+ * currently in flight, and the concurrency cap, return the list of advances
+ * to perform plus the diagnostic info the caller needs to log gate/hold
+ * heartbeats.
  *
  * Semantics:
  *   - **Gated columns** (in MANUAL_ADVANCE_GATES): no advance even when
  *     `ready:<agent>` is set. Eligible items are reported in `gatedAwaiting`
  *     for heartbeat logging.
- *   - **Backlog when in-flight**: held by WIP=1. Eligible items are reported
- *     in `backlogHeld`.
- *   - **Backlog when free**: advance the FIRST eligible item only. The rest
- *     are reported in `backlogHeld` (within-cycle WIP=1 — locked in by
- *     b39f569 after fc1c7fc shipped without it).
+ *   - **Backlog**: capacity = `max(0, maxConcurrent - inFlightCount)`.
+ *     Advance the first `min(eligible.length, capacity)` items in input
+ *     order; hold the rest in `backlogHeld`. When capacity is 0, all
+ *     eligible Backlog items are held. The cap matches `selectDispatches`'s
+ *     concurrency model — N parallel threads through the pipeline, no
+ *     PO frontrunning past available capacity. Without this cap, refined
+ *     `ready:po` tickets would accumulate in Backlog while only one
+ *     advanced per cycle (the pre-2026-05-08 bug).
  *   - **Mid-pipeline columns**: advance ALL eligible items. Once a ticket
  *     is past Backlog we want it to keep flowing.
  *   - An item is **eligible** when it has the rule's `readyLabel`, has a
- *     positive `issueNumber`, and carries no `needs-rework:*` or `error:*`
- *     label.
+ *     positive `issueNumber`, carries no `needs-rework:*` or `error:*`
+ *     label, and has no OPEN blocker.
+ *
+ * Backlog input order is the user's prioritization signal — `runAutoAdvance`
+ * queries with `orderBy: { field: POSITION, direction: ASC }` so top-of-column
+ * comes first. Trust it; don't re-sort.
  */
 export function decideAutoAdvance(
   rules: readonly AdvanceRule[],
   gates: ReadonlySet<string>,
   itemsByColumn: ReadonlyMap<string, readonly DecisionItem[]>,
-  inFlight: boolean,
+  inFlightCount: number,
+  maxConcurrent: number,
 ): AutoAdvanceDecision {
   const advances: AdvanceAction[] = [];
   const gatedAwaiting: { column: string; itemNumbers: number[] }[] = [];
   const backlogHeld: number[] = [];
-  let cycleInFlight = inFlight;
 
   const isEligible = (item: DecisionItem, readyLabel: string): boolean =>
     item.issueNumber > 0 &&
@@ -187,33 +209,29 @@ export function decideAutoAdvance(
     }
 
     if (rule.from === "Backlog") {
-      // Trust the caller's input order. `runAutoAdvance` queries GraphQL
-      // with `orderBy: { field: POSITION, direction: ASC }`, returning
-      // items in board-position order (top of column first). That's the
-      // user's manual prioritization signal — we respect it directly.
-      //
-      // Earlier this file sorted by issueNumber (3abe7a3); that was
-      // wrong. issueNumber is creation order, not priority order. With
-      // POSITION ordering at the GraphQL boundary, the human can drag
-      // tickets up/down the column to set priority and the dispatcher
-      // follows.
-      if (cycleInFlight) {
-        // Already in flight — hold every eligible Backlog item.
+      // Capacity-bounded Backlog promotion. Advance up to `capacity` items
+      // in input (board-position) order; hold the rest. Capacity tracks
+      // free pipeline seats so PO refinements don't pile up as `ready:po`
+      // tickets that can't enter the pipeline (the bug shape: with WIP=N
+      // dispatch but a hardcoded WIP=1 advance, refined backlog tickets
+      // got stranded one-per-cycle while the pipeline ran serially).
+      const capacity = Math.max(0, maxConcurrent - inFlightCount);
+      if (capacity === 0) {
         backlogHeld.push(...eligible.map(i => i.issueNumber));
         continue;
       }
       if (eligible.length === 0) continue;
-      // Advance the first (top of column); hold the rest in input order.
-      const head = eligible[0];
-      advances.push({
-        itemId: head.id,
-        issueNumber: head.issueNumber,
-        fromColumn: rule.from,
-        toColumn: rule.to,
-      });
-      cycleInFlight = true;
-      if (eligible.length > 1) {
-        backlogHeld.push(...eligible.slice(1).map(i => i.issueNumber));
+      const advancing = eligible.slice(0, capacity);
+      for (const item of advancing) {
+        advances.push({
+          itemId: item.id,
+          issueNumber: item.issueNumber,
+          fromColumn: rule.from,
+          toColumn: rule.to,
+        });
+      }
+      if (eligible.length > capacity) {
+        backlogHeld.push(...eligible.slice(capacity).map(i => i.issueNumber));
       }
       continue;
     }

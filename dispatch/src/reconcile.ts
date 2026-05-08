@@ -31,7 +31,7 @@ import {
   AGENT_COLUMN_MAP,
   MANUAL_ADVANCE_GATES,
   MID_PIPELINE_COLUMNS,
-  isPipelineInFlight,
+  countPipelineInFlight,
   decideAutoAdvance,
   decideReworkRoutes,
   extractReworkCount,
@@ -56,16 +56,20 @@ export interface ReconcileClient {
 // route backward (see runReworkRouting). The rule data + helpers live in
 // lib.ts so they can be unit-tested without spinning up the dispatcher.
 
-export async function runAutoAdvance(client: ReconcileClient): Promise<void> {
-  // Probe in-flight: any non-errored ticket in mid-pipeline columns.
-  let inFlight = false;
+export async function runAutoAdvance(client: ReconcileClient, maxConcurrent: number): Promise<void> {
+  // Probe in-flight count: non-errored tickets in mid-pipeline columns.
+  // The Backlog promotion budget is `max(0, maxConcurrent - inFlightCount)`,
+  // so we need the count, not just a boolean.
+  let inFlightCount = 0;
   try {
     const midItems = await Promise.all(
       MID_PIPELINE_COLUMNS.map(c => client.getItemsByStatus(c)),
     );
-    inFlight = isPipelineInFlight(midItems.flat());
+    inFlightCount = countPipelineInFlight(midItems.flat());
   } catch (error: any) {
     // Fail-open: a transient GraphQL error shouldn't deadlock the pipeline.
+    // inFlightCount stays 0, so the cycle behaves as if the pipeline is
+    // empty (matches the pre-fix fail-open behaviour).
     console.warn(`   ⚠️  In-flight probe failed; auto-advance proceeds without WIP gate: ${error.message}`);
   }
 
@@ -82,10 +86,16 @@ export async function runAutoAdvance(client: ReconcileClient): Promise<void> {
     return;
   }
 
-  // Pure decision — see decideAutoAdvance for semantics (gate skip, WIP=1
-  // hold, within-cycle stop-after-first-Backlog-advance, mid-pipeline
-  // advance-all). Test surface lives in lib.test.ts.
-  const decision = decideAutoAdvance(AUTO_ADVANCE_RULES, MANUAL_ADVANCE_GATES, itemsByColumn, inFlight);
+  // Pure decision — see decideAutoAdvance for semantics (gate skip,
+  // capacity-bounded Backlog promotion, mid-pipeline advance-all).
+  // Test surface lives in lib.test.ts.
+  const decision = decideAutoAdvance(
+    AUTO_ADVANCE_RULES,
+    MANUAL_ADVANCE_GATES,
+    itemsByColumn,
+    inFlightCount,
+    maxConcurrent,
+  );
 
   // Apply advances. Track whether ANY mutation was attempted — the
   // cache-invalidation rule is "did we change board state?" not "did
@@ -111,7 +121,9 @@ export async function runAutoAdvance(client: ReconcileClient): Promise<void> {
   }
   if (decision.backlogHeld.length > 0) {
     const numbers = decision.backlogHeld.map(n => `#${n}`).join(", ");
-    console.log(`   🛑 Backlog: ${numbers} held — another ticket is mid-pipeline (WIP=1)`);
+    console.log(
+      `   🛑 Backlog: ${numbers} held — pipeline at capacity (${inFlightCount}/${maxConcurrent} in flight)`,
+    );
   }
 
   // Invalidate the per-cycle cache so subsequent sub-steps in the same

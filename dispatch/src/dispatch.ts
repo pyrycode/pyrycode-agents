@@ -1190,7 +1190,7 @@ async function pollLoop(): Promise<void> {
     // safety net for state changes produced by this cycle's dispatch.
     await runClosedSweep(client);
     await runReworkRouting(client);
-    await runAutoAdvance(client);
+    await runAutoAdvance(client, MAX_CONCURRENT);
     await runDoneCleanup(client);
 
     // Concurrency model: WIP=N (default 2 via PYRY_MAX_CONCURRENT env var).
@@ -1268,7 +1268,7 @@ async function pollLoop(): Promise<void> {
     // changes between cycles).
     await runClosedSweep(client);
     await runReworkRouting(client);
-    await runAutoAdvance(client);
+    await runAutoAdvance(client, MAX_CONCURRENT);
     await runDoneCleanup(client);
 
     // Auto-merge PRs for tickets in the Done column
@@ -1323,8 +1323,8 @@ async function pollLoop(): Promise<void> {
     }
 
     if (dispatched) {
-      // Something was dispatched — restart cycle immediately to process the next stage
-      // for the same ticket (WIP=1: finish one ticket before starting another)
+      // Something was dispatched — restart cycle immediately so each in-flight
+      // ticket can advance to its next stage without waiting a poll interval.
       continue;
     }
 

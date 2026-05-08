@@ -31,6 +31,7 @@ import {
   shouldSkipDispatch,
   extractReworkTarget,
   isPipelineInFlight,
+  countPipelineInFlight,
   decideAutoAdvance,
   decideReworkRoutes,
   decideDoneCleanup,
@@ -299,7 +300,8 @@ describe("MANUAL_ADVANCE_GATES", () => {
 describe("MID_PIPELINE_COLUMNS", () => {
   test("excludes Inbox, Backlog, Done", () => {
     // Mid-pipeline = "in flight." Inbox and Backlog are pre-flight,
-    // Done is post-flight. Locks the WIP=1 pipeline rule's intent.
+    // Done is post-flight. Locks the capacity-cap rule's intent
+    // (Backlog holds when `inFlightCount >= maxConcurrent`).
     for (const off of ["Inbox", "Backlog", "Done"]) {
       assert.ok(
         !MID_PIPELINE_COLUMNS.includes(off),
@@ -320,9 +322,10 @@ describe("MID_PIPELINE_COLUMNS", () => {
   });
 
   test("contains every non-PO agent column", () => {
-    // The strict WIP=1 rule holds Backlog (PO's column) when any other
-    // agent's column has work. So every non-PO agent column must be in
-    // MID_PIPELINE_COLUMNS for the rule to bite uniformly.
+    // The capacity cap counts every non-PO agent column toward
+    // in-flight load. PO's column (Backlog) is pre-flight (refinement
+    // doesn't consume a pipeline seat), so every non-PO agent column
+    // must be in MID_PIPELINE_COLUMNS for the cap to bite uniformly.
     for (const [name, col] of AGENT_COLUMN_MAP) {
       if (name === "po") continue; // PO owns Backlog, which is pre-flight
       assert.ok(
@@ -418,7 +421,7 @@ describe("decideAutoAdvance", () => {
   const items = (...rows: [string, Item[]][]): Map<string, Item[]> => new Map(rows);
 
   test("empty pipeline → no advances, no holds, no gates", () => {
-    const d = decideAutoAdvance(AUTO_ADVANCE_RULES, MANUAL_ADVANCE_GATES, items(), false);
+    const d = decideAutoAdvance(AUTO_ADVANCE_RULES, MANUAL_ADVANCE_GATES, items(), 0, 1);
     assert.deepEqual(d.advances, []);
     assert.deepEqual(d.backlogHeld, []);
     assert.deepEqual(d.gatedAwaiting, []);
@@ -429,7 +432,8 @@ describe("decideAutoAdvance", () => {
       AUTO_ADVANCE_RULES,
       MANUAL_ADVANCE_GATES,
       items(["Backlog", [{ id: "i1", issueNumber: 28, labels: ["ready:po", "size:s"] }]]),
-      false,
+      0,
+      1,
     );
     assert.equal(d.advances.length, 1);
     assert.deepEqual(d.advances[0], {
@@ -441,9 +445,11 @@ describe("decideAutoAdvance", () => {
     assert.deepEqual(d.backlogHeld, []);
   });
 
-  test("two ready:po in Backlog, pipeline empty → first advances, second held (WIP=1 within-cycle)", () => {
-    // This is the bug from b39f569 — without the within-cycle stop,
-    // both #28 and #29 would have advanced in the same cycle.
+  test("two ready:po in Backlog at maxConcurrent=1, pipeline empty → first advances, second held", () => {
+    // With WIP=1 (legacy mode, PYRY_MAX_CONCURRENT=1), only one Backlog
+    // ticket may enter the pipeline per cycle. This is the b39f569 fix
+    // semantic: without the within-cycle cap, both #28 and #29 would
+    // have advanced together when the pipeline could only accept one.
     const d = decideAutoAdvance(
       AUTO_ADVANCE_RULES,
       MANUAL_ADVANCE_GATES,
@@ -451,14 +457,15 @@ describe("decideAutoAdvance", () => {
         { id: "i1", issueNumber: 28, labels: ["ready:po", "size:s"] },
         { id: "i2", issueNumber: 29, labels: ["ready:po", "size:s"] },
       ]]),
-      false,
+      0,
+      1,
     );
     assert.equal(d.advances.length, 1);
     assert.equal(d.advances[0].issueNumber, 28);
     assert.deepEqual(d.backlogHeld, [29]);
   });
 
-  test("Backlog advance picks the first eligible item from input order", () => {
+  test("Backlog advance picks items from input order (board POSITION) at maxConcurrent=1", () => {
     // The pure function trusts the caller's input order. The caller
     // (`runAutoAdvance`) queries GraphQL with `orderBy: { field: POSITION,
     // direction: ASC }`, which returns items in board-position order
@@ -475,7 +482,8 @@ describe("decideAutoAdvance", () => {
         { id: "i2", issueNumber: 29, labels: ["ready:po"] },
         { id: "i1", issueNumber: 28, labels: ["ready:po"] },
       ]]),
-      false,
+      0,
+      1,
     );
     assert.equal(d.advances.length, 1);
     assert.equal(d.advances[0].issueNumber, 29);
@@ -494,7 +502,8 @@ describe("decideAutoAdvance", () => {
         { id: "i1", issueNumber: 28, labels: ["ready:po"] },
         { id: "i2", issueNumber: 30, labels: ["ready:po"] },
       ]]),
-      false,
+      0,
+      1,
     );
     // First eligible (input order) = #31; held = [#28, #30] in input order
     // (NOT [28, 30, 31] sorted, NOT [31, 30, 28] reversed).
@@ -502,12 +511,13 @@ describe("decideAutoAdvance", () => {
     assert.deepEqual(d.backlogHeld, [28, 30]);
   });
 
-  test("ready:po in Backlog while pipeline already in flight → all held, no advance", () => {
+  test("ready:po in Backlog while pipeline at capacity → all held, no advance", () => {
     const d = decideAutoAdvance(
       AUTO_ADVANCE_RULES,
       MANUAL_ADVANCE_GATES,
       items(["Backlog", [{ id: "i1", issueNumber: 29, labels: ["ready:po"] }]]),
-      true,
+      1,
+      1,
     );
     assert.deepEqual(d.advances, []);
     assert.deepEqual(d.backlogHeld, [29]);
@@ -525,7 +535,8 @@ describe("decideAutoAdvance", () => {
       AUTO_ADVANCE_RULES,
       customGates,
       items(["In Architecture", [{ id: "i1", issueNumber: 28, labels: ["ready:architect"] }]]),
-      true,
+      1,
+      1,
     );
     assert.deepEqual(d.advances, []);
     assert.equal(d.gatedAwaiting.length, 1);
@@ -538,7 +549,8 @@ describe("decideAutoAdvance", () => {
       AUTO_ADVANCE_RULES,
       MANUAL_ADVANCE_GATES,
       items(["Backlog", [{ id: "i1", issueNumber: 28, labels: ["ready:po", "needs-rework:po"] }]]),
-      false,
+      0,
+      1,
     );
     assert.deepEqual(d.advances, []);
   });
@@ -548,7 +560,8 @@ describe("decideAutoAdvance", () => {
       AUTO_ADVANCE_RULES,
       MANUAL_ADVANCE_GATES,
       items(["Backlog", [{ id: "i1", issueNumber: 28, labels: ["ready:po", "error:po"] }]]),
-      false,
+      0,
+      1,
     );
     assert.deepEqual(d.advances, []);
   });
@@ -558,7 +571,8 @@ describe("decideAutoAdvance", () => {
       AUTO_ADVANCE_RULES,
       MANUAL_ADVANCE_GATES,
       items(["Backlog", [{ id: "i1", issueNumber: 0, labels: ["ready:po"] }]]),
-      false,
+      0,
+      1,
     );
     assert.deepEqual(d.advances, []);
   });
@@ -568,15 +582,17 @@ describe("decideAutoAdvance", () => {
       AUTO_ADVANCE_RULES,
       MANUAL_ADVANCE_GATES,
       items(["Backlog", [{ id: "i1", issueNumber: 28, labels: ["size:s"] }]]),
-      false,
+      0,
+      1,
     );
     assert.deepEqual(d.advances, []);
   });
 
-  test("mid-pipeline advance proceeds even when pipeline in-flight", () => {
+  test("mid-pipeline advance proceeds even when pipeline at capacity", () => {
     // A ticket sitting in In Development with ready:developer should advance
-    // to In Code Review even though another ticket is gated at In Architecture.
-    // WIP=1 holds NEW tickets out; in-flight tickets keep flowing forward.
+    // to In Code Review even though another ticket sits at In Architecture.
+    // The cap holds NEW tickets out of the pipeline; in-flight tickets keep
+    // flowing forward regardless.
     const d = decideAutoAdvance(
       AUTO_ADVANCE_RULES,
       MANUAL_ADVANCE_GATES,
@@ -584,7 +600,8 @@ describe("decideAutoAdvance", () => {
         ["In Architecture", [{ id: "i1", issueNumber: 28, labels: ["ready:architect"] }]],
         ["In Development",  [{ id: "i2", issueNumber: 30, labels: ["ready:developer"] }]],
       ),
-      true,
+      1,
+      1,
     );
     const devAdvance = d.advances.find(a => a.fromColumn === "In Development");
     assert.ok(devAdvance, "expected an advance from In Development");
@@ -606,7 +623,8 @@ describe("decideAutoAdvance", () => {
         labels: ["ready:po", "size:s"],
         blockedBy: [{ number: 40, state: "OPEN" }],
       }]]),
-      false,
+      0,
+      1,
     );
     assert.deepEqual(d.advances, []);
   });
@@ -623,7 +641,8 @@ describe("decideAutoAdvance", () => {
         labels: ["ready:po", "size:s"],
         blockedBy: [{ number: 40, state: "CLOSED" }],
       }]]),
-      false,
+      0,
+      1,
     );
     assert.equal(d.advances.length, 1);
     assert.equal(d.advances[0].issueNumber, 45);
@@ -639,11 +658,187 @@ describe("decideAutoAdvance", () => {
         ["In Development", [{ id: "i1", issueNumber: 30, labels: ["ready:developer"] }]],
         ["In Code Review", [{ id: "i2", issueNumber: 31, labels: ["ready:code-review"] }]],
       ),
-      true,
+      2,
+      2,
     );
     assert.equal(d.advances.length, 2);
     assert.ok(d.advances.some(a => a.issueNumber === 30 && a.toColumn === "In Code Review"));
     assert.ok(d.advances.some(a => a.issueNumber === 31 && a.toColumn === "In Documentation"));
+  });
+
+  // ----- WIP=N cap on Backlog promotion (2026-05-08 fix) -----
+  //
+  // Before the fix, `decideAutoAdvance` advanced at most ONE Backlog ticket
+  // per cycle even when `selectDispatches` had room for N. Refined
+  // `ready:po` tickets piled up in Backlog while only one drained per cycle,
+  // so PO frontran the queue (consuming the second WIP slot for new
+  // refinement work) while the pipeline ran serially. Concurrency was a
+  // mirage. These tests lock in the new capacity-bounded behaviour.
+
+  test("WIP=N: two ready:po, no in-flight, max=2 → both advance same cycle", () => {
+    // The bug case. Pre-fix: only #28 advanced; #29 stayed `ready:po` in
+    // Backlog and waited a full cycle for the next promotion slot. Post-fix:
+    // capacity = max(0, 2 - 0) = 2 → both go.
+    const d = decideAutoAdvance(
+      AUTO_ADVANCE_RULES,
+      MANUAL_ADVANCE_GATES,
+      items(["Backlog", [
+        { id: "i1", issueNumber: 28, labels: ["ready:po"] },
+        { id: "i2", issueNumber: 29, labels: ["ready:po"] },
+      ]]),
+      0,
+      2,
+    );
+    assert.equal(d.advances.length, 2);
+    assert.equal(d.advances[0].issueNumber, 28);
+    assert.equal(d.advances[1].issueNumber, 29);
+    assert.deepEqual(d.backlogHeld, []);
+  });
+
+  test("WIP=N: more eligible than capacity → advance up to capacity, hold the rest in input order", () => {
+    // Five refined tickets, no in-flight, max=2. Top two by board position
+    // advance; remaining three held in input (board POSITION) order.
+    const d = decideAutoAdvance(
+      AUTO_ADVANCE_RULES,
+      MANUAL_ADVANCE_GATES,
+      items(["Backlog", [
+        { id: "i1", issueNumber: 28, labels: ["ready:po"] },
+        { id: "i2", issueNumber: 29, labels: ["ready:po"] },
+        { id: "i3", issueNumber: 30, labels: ["ready:po"] },
+        { id: "i4", issueNumber: 31, labels: ["ready:po"] },
+        { id: "i5", issueNumber: 32, labels: ["ready:po"] },
+      ]]),
+      0,
+      2,
+    );
+    assert.deepEqual(d.advances.map(a => a.issueNumber), [28, 29]);
+    assert.deepEqual(d.backlogHeld, [30, 31, 32]);
+  });
+
+  test("WIP=N: partial in-flight reduces capacity → advance fills only remaining seats", () => {
+    // Pipeline already has one thread running (e.g. an in-flight architect run).
+    // Capacity = max(0, 2 - 1) = 1. Only one Backlog ticket advances even
+    // though three are eligible.
+    const d = decideAutoAdvance(
+      AUTO_ADVANCE_RULES,
+      MANUAL_ADVANCE_GATES,
+      items(["Backlog", [
+        { id: "i1", issueNumber: 28, labels: ["ready:po"] },
+        { id: "i2", issueNumber: 29, labels: ["ready:po"] },
+        { id: "i3", issueNumber: 30, labels: ["ready:po"] },
+      ]]),
+      1,
+      2,
+    );
+    assert.deepEqual(d.advances.map(a => a.issueNumber), [28]);
+    assert.deepEqual(d.backlogHeld, [29, 30]);
+  });
+
+  test("WIP=N: pipeline at capacity (inFlight == max) → all eligible held", () => {
+    // Two threads already running, max=2 → capacity=0. Backlog freezes
+    // until a thread completes and frees a seat.
+    const d = decideAutoAdvance(
+      AUTO_ADVANCE_RULES,
+      MANUAL_ADVANCE_GATES,
+      items(["Backlog", [{ id: "i1", issueNumber: 30, labels: ["ready:po"] }]]),
+      2,
+      2,
+    );
+    assert.deepEqual(d.advances, []);
+    assert.deepEqual(d.backlogHeld, [30]);
+  });
+
+  test("WIP=N: in-flight count exceeding max (transient) clamps capacity to 0", () => {
+    // Defensive: if an external mutation (manual board edit, error-recovery
+    // restart) leaves more tickets mid-pipeline than the configured cap,
+    // capacity must not go negative. Backlog stays held until the pipeline
+    // drains back below the cap.
+    const d = decideAutoAdvance(
+      AUTO_ADVANCE_RULES,
+      MANUAL_ADVANCE_GATES,
+      items(["Backlog", [{ id: "i1", issueNumber: 30, labels: ["ready:po"] }]]),
+      5,
+      2,
+    );
+    assert.deepEqual(d.advances, []);
+    assert.deepEqual(d.backlogHeld, [30]);
+  });
+
+  test("WIP=N: maxConcurrent=0 holds all eligible Backlog (degenerate config)", () => {
+    // Boundary: a misconfigured cap of 0 must not advance anything from
+    // Backlog. Mid-pipeline rules are independent of the cap.
+    const d = decideAutoAdvance(
+      AUTO_ADVANCE_RULES,
+      MANUAL_ADVANCE_GATES,
+      items(["Backlog", [
+        { id: "i1", issueNumber: 28, labels: ["ready:po"] },
+        { id: "i2", issueNumber: 29, labels: ["ready:po"] },
+      ]]),
+      0,
+      0,
+    );
+    assert.deepEqual(d.advances, []);
+    assert.deepEqual(d.backlogHeld, [28, 29]);
+  });
+});
+
+describe("countPipelineInFlight", () => {
+  test("empty input → 0", () => {
+    assert.equal(countPipelineInFlight([]), 0);
+  });
+
+  test("counts non-errored tickets with positive issueNumber", () => {
+    assert.equal(
+      countPipelineInFlight([
+        { issueNumber: 28, labels: ["ready:architect"] },
+        { issueNumber: 30, labels: [] },
+        { issueNumber: 31, labels: ["wip:developer"] },
+      ]),
+      3,
+    );
+  });
+
+  test("excludes error-labelled tickets", () => {
+    // Errored tickets are parked; they don't consume a WIP seat.
+    assert.equal(
+      countPipelineInFlight([
+        { issueNumber: 28, labels: ["ready:architect"] },
+        { issueNumber: 99, labels: ["error:developer"] },
+        { issueNumber: 100, labels: ["error:max_turns_salvaged"] },
+      ]),
+      1,
+    );
+  });
+
+  test("excludes non-issue items (issueNumber <= 0)", () => {
+    assert.equal(
+      countPipelineInFlight([
+        { issueNumber: 0, labels: [] },
+        { issueNumber: -1, labels: ["ready:po"] },
+        { issueNumber: 28, labels: [] },
+      ]),
+      1,
+    );
+  });
+
+  test("isPipelineInFlight is countPipelineInFlight > 0", () => {
+    // Locks the alias relationship — boolean wrapper must agree with count.
+    const cases: { issueNumber: number; labels: string[] }[][] = [
+      [],
+      [{ issueNumber: 1, labels: [] }],
+      [{ issueNumber: 99, labels: ["error:po"] }],
+      [
+        { issueNumber: 99, labels: ["error:po"] },
+        { issueNumber: 28, labels: [] },
+      ],
+    ];
+    for (const c of cases) {
+      assert.equal(
+        isPipelineInFlight(c),
+        countPipelineInFlight(c) > 0,
+        `mismatch for ${JSON.stringify(c)}`,
+      );
+    }
   });
 });
 

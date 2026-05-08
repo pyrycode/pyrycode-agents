@@ -97,7 +97,7 @@ describe("runAutoAdvance — cache invalidation", () => {
     });
     const client = new MockClient([item]);
 
-    await runAutoAdvance(client);
+    await runAutoAdvance(client, 1);
 
     // Sanity: the advance happened.
     assert.equal(client.updateItemStatusCalls.length, 1, "expected one updateItemStatus call");
@@ -117,7 +117,7 @@ describe("runAutoAdvance — cache invalidation", () => {
     // Empty pipeline → nothing to advance → no cache churn.
     const client = new MockClient([]);
 
-    await runAutoAdvance(client);
+    await runAutoAdvance(client, 1);
 
     assert.equal(client.updateItemStatusCalls.length, 0);
     assert.equal(
@@ -138,7 +138,7 @@ describe("runAutoAdvance — cache invalidation", () => {
     });
     const client = new MockClient([item]);
 
-    await runAutoAdvance(client);
+    await runAutoAdvance(client, 1);
 
     assert.equal(client.updateItemStatusCalls.length, 1);
     assert.equal(client.updateItemStatusCalls[0]?.newStatus, "In Architecture");
