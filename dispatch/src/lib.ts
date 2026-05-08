@@ -368,6 +368,8 @@ export interface DoneCleanup {
  *
  * Strips:
  *   - any `ready:`/`wip:`/`error:`/`needs-rework:` label (`isPipelineLabel`)
+ *     EXCEPT labels in `GLOBAL_BLOCK_LABELS` — those are sticky-by-design
+ *     and must survive cleanup (see below)
  *   - any `rework-count:N` label (counter — reset so a re-opened ticket
  *     starts fresh rather than carrying stale rounds toward the loop
  *     threshold)
@@ -377,6 +379,12 @@ export interface DoneCleanup {
  *   - the `merged` label specifically — its semantic is "PR was merged,"
  *     set only by the auto-merge path; reaching Done some other way
  *     shouldn't grant it
+ *   - `GLOBAL_BLOCK_LABELS` (`error:merge-conflict`, `error:max_turns_salvaged`)
+ *     — these are sticky human-triage signals. Stripping them defeats the
+ *     skip-guard in the auto-merge / salvage paths and re-arms the very
+ *     loop the labels exist to stop. Source: pyrycode-relay #3 spammed
+ *     the same merge-conflict comment 11+ times because cleanup stripped
+ *     `error:merge-conflict` every cycle (pyrycode/agents#2, 2026-05-08).
  *
  * Skips items with `issueNumber <= 0` (epics, virtual items) — same as
  * `decideReworkRoutes`. Idempotent: a clean ticket produces no entry.
@@ -393,7 +401,9 @@ export function decideDoneCleanup(
     if (item.issueNumber <= 0) continue;
 
     const labelsToStrip = item.labels.filter(
-      l => isPipelineLabel(l) || l.startsWith("rework-count:"),
+      l =>
+        (isPipelineLabel(l) || l.startsWith("rework-count:")) &&
+        !GLOBAL_BLOCK_LABELS.has(l),
     );
 
     if (labelsToStrip.length === 0) continue;
