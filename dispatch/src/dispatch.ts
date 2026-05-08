@@ -11,6 +11,7 @@ import {
   resolvePyrycodeRepoRoot,
   shouldSkipDispatch,
   isPipelineLabel,
+  isMergeConflictError,
   decideDoneCleanup,
   shouldAutoCommit,
   shouldUseWorktree,
@@ -1279,19 +1280,33 @@ async function pollLoop(): Promise<void> {
         if (item.issueNumber <= 0) continue;
         // Skip if already merged (no open PR)
         if (item.labels.includes("merged")) continue;
+        // Skip if already in conflict-block state — human is triaging.
+        // Without this, the auto-merge would loop on the same gh pr merge
+        // failure every cycle indefinitely (the pre-2026-05-08 bug). The
+        // label is stripped manually after `git merge origin/main` +
+        // resolution + push lands the conflict-resolved branch.
+        if (item.labels.includes("error:merge-conflict")) continue;
 
+        // Step 1: Look up the open PR. Side-effects ahead, so a separate
+        // try-catch — if the lookup itself fails (network / auth), skip
+        // silently and retry next cycle.
+        let prNumber: number;
         try {
-          // Find open PR for this issue's feature branch
           const prCheck = execSync(
             `gh pr list --head "feature/${item.issueNumber}" --state open --json number --jq '.[0].number'`,
             { cwd: repoRoot, encoding: "utf-8", timeout: 15_000 }
           ).trim();
-
           if (!prCheck) continue;
+          const parsed = parseInt(prCheck, 10);
+          if (isNaN(parsed)) continue;
+          prNumber = parsed;
+        } catch (e: any) {
+          // PR-list failures are transient (rate limit, network) — retry next cycle.
+          continue;
+        }
 
-          const prNumber = parseInt(prCheck, 10);
-          if (isNaN(prNumber)) continue;
-
+        // Step 2: Try the actual merge. Conflict path is the special case.
+        try {
           console.log(`   🔀 Auto-merging PR #${prNumber} for #${item.issueNumber} (moved to Done)`);
           execSync(
             `gh pr merge ${prNumber} --merge --delete-branch`,
@@ -1312,10 +1327,39 @@ async function pollLoop(): Promise<void> {
           console.log(`   ✅ PR #${prNumber} merged, branch feature/${item.issueNumber} deleted, labels cleaned`);
           await notifyDiscord(`🔀 PR #${prNumber} merged for #${item.issueNumber}: ${item.title}`);
         } catch (e: any) {
-          if (e.message?.includes("merge conflict") || e.stderr?.includes("merge conflict")) {
-            console.warn(`   ⚠️  PR for #${item.issueNumber} has merge conflicts — skipping auto-merge`);
+          // Combine stderr + message — execSync surfaces gh's stderr
+          // through both depending on Node version + how the process exited.
+          const errOut = `${e.stderr ?? ""}\n${e.message ?? ""}`;
+          if (isMergeConflictError(errOut)) {
+            // Label + comment, then bail out of retries via GLOBAL_BLOCK_LABELS.
+            // Idempotent guard above (`error:merge-conflict` skip) handles
+            // re-entry — but we got here, so the label isn't set yet.
+            console.warn(`   🛑 PR #${prNumber} for #${item.issueNumber} has merge conflicts — labelling for triage`);
+            try {
+              await client.addLabel(item.issueNumber, "error:merge-conflict");
+              await client.addComment(
+                item.issueNumber,
+                `## 🛑 Auto-merge blocked by merge conflict\n\n` +
+                `PR #${prNumber} cannot be merged into \`main\` cleanly. ` +
+                `The dispatcher has stopped retrying this PR; resolve the conflict manually:\n\n` +
+                `\`\`\`bash\n` +
+                `gh pr checkout ${prNumber}\n` +
+                `git fetch origin main\n` +
+                `git merge origin/main\n` +
+                `# resolve conflicts in your editor\n` +
+                `git push\n` +
+                `\`\`\`\n\n` +
+                `Then strip \`error:merge-conflict\` from this issue to resume the pipeline. ` +
+                `The dispatcher will pick the merge back up on its next cycle.\n\n` +
+                `*Filed automatically by dispatcher — pyrycode/agents commit log has the implementation.*`,
+              );
+              await notifyDiscord(`🛑 Merge conflict on PR #${prNumber} (#${item.issueNumber}) — labelled for human triage.`);
+            } catch (labelErr: any) {
+              console.warn(`   ⚠️  Failed to label/comment merge conflict on #${item.issueNumber}: ${labelErr.message ?? labelErr}`);
+            }
+            continue;
           }
-          // Otherwise silently skip (no PR, already merged, etc.)
+          // Non-conflict failure (transient network, auth, etc.): silently retry next cycle.
         }
       }
     } catch (error: any) {

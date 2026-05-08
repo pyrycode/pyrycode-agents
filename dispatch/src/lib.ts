@@ -868,17 +868,53 @@ export function isPipelineLabel(label: string): boolean {
 
 /**
  * Pipeline labels that block dispatch for ALL agents (not scoped to a
- * specific agent's name). Currently only `error:max_turns_salvaged`,
- * which marks a ticket whose salvaged work sits in a draft PR awaiting
- * human triage. Until the label is stripped, no agent should re-run on
- * this ticket — otherwise the next dispatch's existing PR-salvage path
- * (which treats max_turns + open PR as success) would auto-advance the
- * partial work via `ready:<agent>`. See `attemptSaferSalvage` and
- * `shouldAttemptSafeSalvage` for the salvage flow.
+ * specific agent's name). Until any of these is stripped, no agent should
+ * re-run on the ticket.
+ *
+ * - `error:max_turns_salvaged` — ticket's salvaged work sits in a draft PR
+ *   awaiting human triage. Without the block, the next dispatch's existing
+ *   PR-salvage path (which treats max_turns + open PR as success) would
+ *   auto-advance partial work via `ready:<agent>`. See `attemptSaferSalvage`
+ *   and `shouldAttemptSafeSalvage` for the salvage flow.
+ * - `error:merge-conflict` — auto-merge against `main` failed because the
+ *   PR has a merge conflict. The label stops the auto-merge retry loop
+ *   (which would otherwise hammer `gh pr merge` every cycle for zero
+ *   progress, burning GraphQL points). The dispatcher's auto-merge block
+ *   skips tickets carrying this label; the human resolves the conflict
+ *   manually (`gh pr checkout … && git merge origin/main && …`) and strips
+ *   the label to resume. Mirrors `error:max_turns_salvaged` shape: preserve
+ *   work, force human attention, stop the loop. Detection uses
+ *   `isMergeConflictError` on the gh CLI's stderr.
  */
 export const GLOBAL_BLOCK_LABELS: ReadonlySet<string> = new Set([
   "error:max_turns_salvaged",
+  "error:merge-conflict",
 ]);
+
+/**
+ * True if the given subprocess stderr/error indicates `gh pr merge` failed
+ * because the PR has a merge conflict against its base. Matches the two
+ * canonical phrases gh CLI emits ("is not mergeable" / "merge commit cannot
+ * be cleanly created") plus the lower-case "merge conflict" phrase older
+ * gh versions and other tooling use. Case-insensitive — gh's wording has
+ * shifted across versions.
+ *
+ * Used by the dispatcher's auto-merge loop on Done tickets: if a merge
+ * attempt errors and `isMergeConflictError(stderr) === true`, the
+ * dispatcher labels the ticket `error:merge-conflict` (a global block),
+ * posts a triage comment with the resolution recipe, and stops retrying.
+ * Returns `false` for empty / undefined input — caller decides whether
+ * "no stderr" means "no error" (skip) or "unknown failure" (also skip).
+ */
+export function isMergeConflictError(stderr: string | null | undefined): boolean {
+  if (!stderr) return false;
+  const s = stderr.toLowerCase();
+  return (
+    s.includes("not mergeable") ||
+    s.includes("merge commit cannot be cleanly created") ||
+    s.includes("merge conflict")
+  );
+}
 
 /**
  * The four-label gate from pollLoop's per-ticket inner loop: a ticket

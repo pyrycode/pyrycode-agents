@@ -95,25 +95,36 @@ Then stop. Don't write a spec for the parent — it would be thrown away.
 
 ### 1.5. File-overlap check (always, even on size-S tickets)
 
-After the size check passes, before writing the spec, identify which files your design will touch. Then check whether any other open PR or in-flight feature branch also touches them. **Overlapping changes to the same file produce merge conflicts at integration time.** WIP=1 doesn't prevent this — feature branches are created at architect time and merged at code-review time, with hours in between during which other PRs land.
+After the size check passes, before writing the spec, identify which files your design will touch. Then check whether any other in-flight feature branch also touches them. **Overlapping changes to the same file produce merge conflicts at integration time.** Concurrent dispatch (`PYRY_MAX_CONCURRENT=2` default) doesn't prevent this — feature branches are created at architect time and merged at code-review time, with hours in between during which other architect/developer/code-review/documentation runs may push to sibling branches.
 
-**Concrete check:**
+**Concrete check (covers both open-PR and pre-PR in-flight cases):**
 
 ```bash
 # Files your design will touch (from the sketch — you have these in your head)
 FILES=("internal/sessions/pool.go" "internal/sessions/pool_test.go" "cmd/pyry/main.go")
 
-# For each open PR, list files it touches; flag overlaps
-for pr in $(gh pr list --state open --json number -q '.[].number'); do
-  pr_files=$(gh pr view "$pr" --json files -q '.files[].path')
+# Refresh remote-tracking branches so we see in-flight work pushed by
+# concurrent agent runs that haven't opened a PR yet (the WIP=N gap:
+# `gh pr list` is blind to branches between architect-push and
+# developer-PR-open).
+git fetch origin --prune --quiet
+
+# For each remote feature branch (not just those backed by an open PR),
+# list files it touches relative to main; flag overlaps.
+for branch in $(git branch -r | grep -E 'origin/feature/[0-9]+$' | tr -d ' '); do
+  branch_files=$(git diff --name-only "origin/main...${branch}" 2>/dev/null || true)
   for f in "${FILES[@]}"; do
-    if echo "$pr_files" | grep -q "^$f$"; then
-      pr_issue=$(gh pr view "$pr" --json closingIssuesReferences -q '.closingIssuesReferences[0].number')
-      echo "Overlap: PR #$pr closes #$pr_issue, touches $f"
+    if echo "${branch_files}" | grep -Fxq "$f"; then
+      issue_num=$(echo "$branch" | sed -E 's|^origin/feature/||')
+      # Skip self-overlap if this branch is the ticket you're refining now.
+      if [ "$issue_num" = "<THIS-TICKET>" ]; then continue; fi
+      echo "Overlap: branch ${branch} (issue #${issue_num}) touches $f"
     fi
   done
 done
 ```
+
+**Why branch-based instead of PR-based.** Pre-2026-05-08 the check used `gh pr list --state open`. That worked under WIP=1 because the previous ticket's PR existed by the time the next architect ran. With WIP=N, two architects run in parallel; neither has produced a PR yet at architect time, so `gh pr list` is blind to the sibling. `git branch -r` sees the branch the moment it's pushed (architect's spec-commit, developer's first push, etc.) regardless of whether a PR has been opened. Strict superset of the old check — PRs are just branches with a wrapper.
 
 **If any overlap is found:**
 
@@ -132,7 +143,7 @@ done
 
 When the blocker closes, `blockedBy` flips to CLOSED, the ticket auto-advances from Backlog → In Architecture again, and you re-run with the now-merged code on main as your starting point. No stale-branch merge conflict — your feature branch will be created from current main when the developer runs.
 
-**Why this matters:** Pyrycode #40 hit this exact failure. No logical dependency on #38 or #39, but all three modified `internal/sessions/pool_test.go`. #38 + #39 merged while #40 was being recovered; `git merge main` in #40's code-review worktree conflicted because both branches added test functions in the same region. ~30 min of manual merge resolution. A 10-second `gh pr list --json files` check at architect time would have set the block, deferred #40 until #38 + #39 landed, and made the conflict structurally impossible.
+**Why this matters:** Pyrycode #40 hit this exact failure. No logical dependency on #38 or #39, but all three modified `internal/sessions/pool_test.go`. #38 + #39 merged while #40 was being recovered; `git merge main` in #40's code-review worktree conflicted because both branches added test functions in the same region. ~30 min of manual merge resolution. A 10-second branch-overlap check at architect time would have set the block, deferred #40 until #38 + #39 landed, and made the conflict structurally impossible. The 2026-05-08 #182/#187 incident proved the same point under WIP=N — sibling `internal/update` tickets touching the same shared docs collided at merge time because the old PR-based check couldn't see in-flight work.
 
 ### 2. Spec writing (only if not splitting)
 

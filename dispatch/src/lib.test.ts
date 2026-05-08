@@ -32,6 +32,7 @@ import {
   extractReworkTarget,
   isPipelineInFlight,
   countPipelineInFlight,
+  isMergeConflictError,
   decideAutoAdvance,
   decideReworkRoutes,
   decideDoneCleanup,
@@ -168,6 +169,84 @@ describe("shouldSkipDispatch", () => {
       shouldSkipDispatch(["size:s", "error:max_turns_salvaged"], "developer"),
       true,
     );
+  });
+
+  test("error:merge-conflict blocks ALL agents until human resolves the conflict", () => {
+    // The conflict label sits on a Done-column ticket whose PR can't be
+    // auto-merged because main has moved. WITHOUT a global block, the
+    // dispatcher's auto-merge loop retries every cycle and burns
+    // GraphQL points indefinitely. WITH the block, the per-agent
+    // dispatch path also skips the ticket, which doesn't matter much
+    // (the ticket is in Done) but keeps the semantics consistent —
+    // any global-block label means "human, look at this."
+    for (const agent of AGENTS) {
+      assert.equal(
+        shouldSkipDispatch(["error:merge-conflict"], agent.name),
+        true,
+        `error:merge-conflict should block dispatch for ${agent.name}`,
+      );
+    }
+  });
+});
+
+describe("isMergeConflictError", () => {
+  // The dispatcher's auto-merge block runs `gh pr merge` on Done-column
+  // tickets. When the PR conflicts with main, gh prints a deterministic
+  // error to stderr. The dispatcher uses this predicate to detect that
+  // case and add `error:merge-conflict` (a global block) instead of
+  // looping on the same retry every cycle.
+
+  test("matches the canonical 'is not mergeable' phrase from gh CLI", () => {
+    // Verbatim shape from the live 2026-05-08 incident logs:
+    //   X Pull request pyrycode/pyrycode#193 is not mergeable: the merge commit cannot be cleanly created.
+    const stderr = "X Pull request pyrycode/pyrycode#193 is not mergeable: the merge commit cannot be cleanly created.";
+    assert.equal(isMergeConflictError(stderr), true);
+  });
+
+  test("matches the 'merge commit cannot be cleanly created' phrase alone", () => {
+    // Robust against gh shortening the prefix in a future version.
+    assert.equal(
+      isMergeConflictError("the merge commit cannot be cleanly created"),
+      true,
+    );
+  });
+
+  test("matches the lowercase 'merge conflict' phrase (older gh / alt tooling)", () => {
+    assert.equal(isMergeConflictError("error: merge conflict in foo.go"), true);
+  });
+
+  test("is case-insensitive", () => {
+    // gh's wording capitalisation has shifted across versions; don't
+    // tie our gate to a specific casing.
+    assert.equal(
+      isMergeConflictError("PULL REQUEST IS NOT MERGEABLE: blah"),
+      true,
+    );
+  });
+
+  test("does NOT match unrelated gh errors", () => {
+    // Non-merge-conflict failure modes (network, auth, missing PR) must
+    // NOT trigger the merge-conflict label — they're transient and
+    // labelling them would block tickets that just need a retry.
+    assert.equal(isMergeConflictError("could not find pull request"), false);
+    assert.equal(isMergeConflictError("network is unreachable"), false);
+    assert.equal(isMergeConflictError("HTTP 403: rate limit exceeded"), false);
+    assert.equal(isMergeConflictError("authentication required"), false);
+  });
+
+  test("returns false for empty / undefined / null input", () => {
+    // Some execSync errors set `stderr` to empty when the failure
+    // happened before the subprocess could write anything. Don't
+    // false-positive on those.
+    assert.equal(isMergeConflictError(""), false);
+    assert.equal(isMergeConflictError(undefined), false);
+    assert.equal(isMergeConflictError(null), false);
+  });
+
+  test("does not match partial-keyword false positives", () => {
+    // 'merge' alone, or 'conflict' alone, should NOT match — too broad.
+    assert.equal(isMergeConflictError("ready to merge"), false);
+    assert.equal(isMergeConflictError("name conflict in resource"), false);
   });
 });
 
