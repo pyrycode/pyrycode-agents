@@ -1151,6 +1151,56 @@ describe("decideDoneCleanup", () => {
     assert.ok(!stripped.has("size:s"));
   });
 
+  test("error:merge-conflict survives cleanup (GLOBAL_BLOCK_LABELS exemption)", () => {
+    // The bug from pyrycode-relay #3: runDoneCleanup was stripping
+    // error:merge-conflict every cycle because isPipelineLabel matches
+    // any error: prefix. The auto-merge block then re-fetched Done items,
+    // saw no global-block label, retried gh pr merge, hit the conflict,
+    // re-added the label, re-posted the comment — looping forever. The
+    // human-stripping contract on GLOBAL_BLOCK_LABELS requires they
+    // persist across cleanup passes until a human resolves them.
+    const items: Item[] = [{
+      id: "i1",
+      issueNumber: 3,
+      labels: ["size:s", "error:merge-conflict"],
+    }];
+    const c = decideDoneCleanup(items);
+    assert.deepEqual(c, [],
+      "error:merge-conflict must NOT be stripped — it is a GLOBAL_BLOCK_LABEL");
+  });
+
+  test("error:merge-conflict survives but coexisting per-agent labels still strip", () => {
+    // Common shape: ticket reaches Done via auto-advance carrying
+    // ready:code-review, then the auto-merge attempt hits a conflict and
+    // adds error:merge-conflict. Cleanup should strip the per-agent
+    // ready: label but leave the global-block intact so the human gets
+    // their resume-the-pipeline cue and the auto-merge skip-guard fires.
+    const items: Item[] = [{
+      id: "i1",
+      issueNumber: 3,
+      labels: ["ready:code-review", "error:merge-conflict", "size:s"],
+    }];
+    const c = decideDoneCleanup(items);
+    assert.equal(c.length, 1);
+    assert.deepEqual(c[0].labelsToStrip, ["ready:code-review"]);
+  });
+
+  test("error:max_turns_salvaged survives cleanup (same exemption as merge-conflict)", () => {
+    // Salvaged tickets sit in Done with a draft PR awaiting human triage.
+    // Same shape as merge-conflict: GLOBAL_BLOCK_LABELS persist until a
+    // human strips them. Cleanup stripping error:max_turns_salvaged would
+    // re-arm auto-advance against the salvaged work, which is exactly
+    // what the salvage path was designed to prevent.
+    const items: Item[] = [{
+      id: "i1",
+      issueNumber: 99,
+      labels: ["ready:developer", "error:max_turns_salvaged"],
+    }];
+    const c = decideDoneCleanup(items);
+    assert.equal(c.length, 1);
+    assert.deepEqual(c[0].labelsToStrip, ["ready:developer"]);
+  });
+
   test("rework-count:N is stripped along with pipeline labels", () => {
     // rework-count: isn't in PIPELINE_LABEL_PREFIXES (it's a counter,
     // not a state label), but it IS pipeline state. Cleaning it on Done
