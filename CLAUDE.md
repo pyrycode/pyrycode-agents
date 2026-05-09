@@ -14,6 +14,8 @@ The same fall-back rules apply as in agent CLAUDE.mds: use grep/Read for comment
 
 **Re-index when finished:** the dispatcher's worktree symlink (`decideCodegraphSymlink` in `lib.ts`) points spawned agents at the canonical `.codegraph/`. After a substantive change to dispatcher source, run `codegraph index -f` from `agents/` so the next dispatcher run sees the new symbols. (`codegraph sync` doesn't always pick up changes — confirmed 2026-05-09.)
 
+**Querying from a different cwd (e.g. the vault):** the codegraph MCP tools accept a `projectPath` argument — pass `/Users/<you>/Workspace/Projects/pyrycode/agents` to query the dispatcher from any session, regardless of where Claude Code was launched. Without `projectPath` the MCP server falls back to CWD, which usually isn't the project root.
+
 ## Test-first
 
 Test-first applies to dispatcher edits as much as it does to dispatched developer agents. RED → GREEN → REFACTOR. Failing test in `lib.test.ts` (or `reconcile.test.ts`) first; implementation after. Backfilling tests after the fact ships bugs first — see PROJECT-MEMORY's "Straightforward state mutation is a smell phrase" lesson.
