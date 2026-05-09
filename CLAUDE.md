@@ -1,19 +1,19 @@
 # Pyrycode Dispatcher — Working Notes
 
-This is the dispatcher and agent-prompts repo. The Go source for the binary lives in the parent (`pyrycode/`); this repo houses the orchestration layer that turns GitHub Project tickets into agent runs.
+This is the agent-prompts + dispatcher-launcher repo. The Go source for the binary lives in the parent (`pyrycode/`). As of 2026-05-09 the dispatcher source itself lives in [`pyrycode/agent-dispatcher`](https://github.com/pyrycode/agent-dispatcher) — a separate repo consumed via git submodule at `dispatcher/`. This repo holds the per-agent CLAUDE.md prompts (architect/, developer/, code-review/, documentation/, po/), the `bin/` launcher scripts, and the `.env` config that drives the dispatcher against the pyrycode board.
 
-## Dispatcher source layout (post-2026-05-09 split)
+## Dispatcher source layout
 
-The pure-function helpers used to live in a single `lib.ts`. As of 2026-05-09 they're split across five files; `lib.ts` is now a thin barrel re-export.
+The dispatcher's pure-function helpers are split across five files; `lib.ts` is a thin barrel re-export.
 
 | File | Owns |
 |---|---|
-| `dispatch/src/pipeline-decisions.ts` | Auto-advance rules + decision, rework routing, done-cleanup, post-run labels, label predicates, rework-target extraction, rework-loop circuit breaker, advance-rule lookup |
-| `dispatch/src/agent-runtime.ts` | `shouldUseWorktree`, `maxTurnsFor`, salvage gating (`shouldAttemptSafeSalvage`, `findReadyPrNumber`, `extractRateLimitInfo`), `SPAWN_ENV_DENYLIST` + `scrubSpawnEnv` |
-| `dispatch/src/worktree.ts` | `shouldAutoCommit`, `decideCodegraphSymlink`, `decideBranchSetup`, `findWorktreesForBranch`, `resolveAgentsRepoRoot`, `resolveTargetRepoRoot` |
-| `dispatch/src/blockers.ts` | `hasOpenBlockers`, `shouldSkipBlockedFor`, `shouldProduceCommits`, `parseCommitsAhead`, `shouldFlagEmptyBranch` |
-| `dispatch/src/dispatch-selection.ts` | `AGENT_COLUMN_MAP`, `selectDispatches` |
-| `dispatch/src/lib.ts` | Barrel re-export only (kept one cycle for `dispatch.ts` + tests) |
+| `dispatcher/src/pipeline-decisions.ts` | Auto-advance rules + decision, rework routing, done-cleanup, post-run labels, label predicates, rework-target extraction, rework-loop circuit breaker, advance-rule lookup |
+| `dispatcher/src/agent-runtime.ts` | `shouldUseWorktree`, `maxTurnsFor`, salvage gating (`shouldAttemptSafeSalvage`, `findReadyPrNumber`, `extractRateLimitInfo`), `SPAWN_ENV_DENYLIST` + `scrubSpawnEnv` |
+| `dispatcher/src/worktree.ts` | `shouldAutoCommit`, `decideCodegraphSymlink`, `decideBranchSetup`, `findWorktreesForBranch`, `resolveAgentsRepoRoot`, `resolveTargetRepoRoot` |
+| `dispatcher/src/blockers.ts` | `hasOpenBlockers`, `shouldSkipBlockedFor`, `shouldProduceCommits`, `parseCommitsAhead`, `shouldFlagEmptyBranch` |
+| `dispatcher/src/dispatch-selection.ts` | `AGENT_COLUMN_MAP`, `selectDispatches` |
+| `dispatcher/src/lib.ts` | Barrel re-export only (kept one cycle for `dispatch.ts` + tests) |
 
 Cross-file deps form a clean DAG: pipeline-decisions → blockers; dispatch-selection → pipeline-decisions + blockers; worktree and agent-runtime are leaves.
 
