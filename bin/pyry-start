@@ -59,6 +59,16 @@ pnpm install --silent
 # artifacts (logs/, .prompt-*.txt, .system-prompt-*.txt) here.
 export AGENTS_REPO_PATH="$AGENTS_DIR"
 
+# Also export TARGET_REPO_PATH BEFORE node starts. The dispatcher's
+# `dispatch.ts` evaluates `const repoRoot = process.env.TARGET_REPO_PATH
+# ? resolve(...) : resolveTargetRepoRoot(agentsRepoRoot)` at module-top —
+# BEFORE dotenv.config() runs further down the same file. Under sibling
+# layout, the fallback resolves to `Projects/` (not a git repo) and the
+# first `git checkout main && git pull` fails with "not a git repository".
+# Pre-exporting from the .env value bypasses the dotenv-load-order bug.
+# See [[Pyrycode/Lessons]] "dotenv loads after repoRoot" entry.
+export TARGET_REPO_PATH="$RESOLVED_TARGET"
+
 # Spawn dispatcher in background so we can capture the actual PID for
 # the lock and clean up on shell exit. `exec` would replace the shell
 # and lose the EXIT trap; we keep the shell alive as a thin lock-holder
@@ -67,13 +77,23 @@ pnpm start "$@" &
 PNPM_PID=$!
 
 # Find the actual dispatcher node process. pnpm spawns node-running-tsx;
-# pgrep's pattern matches the inner node process, which is what
-# bin/pyry-status / bin/pyry-drain / pkill target. Retry a few times
-# while node is bootstrapping.
+# pgrep's pattern matches the inner node process. Under cross-fork
+# concurrent usage (≥2 dispatchers alive across different agents-fork
+# repos), `pgrep -f ... | head -1` always returns the oldest (lowest)
+# matching PID, not the one this pyry-start spawned. We disambiguate by
+# matching each candidate's `AGENTS_REPO_PATH` env var against our own
+# AGENTS_DIR (which we exported before spawn — see line 60). Retry a
+# few times while node bootstraps; `ps eww` shows env including our
+# exported value for the matching process.
 DISPATCHER_PID=""
 i=0
 while [ $i -lt 30 ]; do
-  DISPATCHER_PID=$(pgrep -f "tsx.*src/dispatch-bin\.ts" 2>/dev/null | head -1)
+  for pid in $(pgrep -f "tsx.*src/dispatch-bin\.ts" 2>/dev/null); do
+    if ps eww -p "$pid" 2>/dev/null | tr ' ' '\n' | grep -qx "AGENTS_REPO_PATH=$AGENTS_DIR"; then
+      DISPATCHER_PID="$pid"
+      break
+    fi
+  done
   [ -n "$DISPATCHER_PID" ] && break
   sleep 0.1
   i=$((i + 1))
