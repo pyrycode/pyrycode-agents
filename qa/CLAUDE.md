@@ -109,8 +109,11 @@ else
       echo "qa: baseline worktree add failed; routing as standard red" >&2
     else
       # 4. Run make check in the baseline worktree. Failures here are
-      # what we want to detect.
-      (cd "$BASELINE_DIR" && make check) 2>&1 > "$BASELINE_DIR/baseline-check.log" || true
+      # what we want to detect. `&>` captures BOTH stdout and stderr —
+      # `go vet`/`staticcheck` write to stderr and we need them in the
+      # log for accurate comparison. (`2>&1 > file` is wrong-ordered and
+      # would leak stderr to the terminal.)
+      (cd "$BASELINE_DIR" && make check) &> "$BASELINE_DIR/baseline-check.log" || true
       if [ -f "$BASELINE_DIR/baseline-check.log" ]; then
         BASELINE_FAILS=$(grep -E '^--- FAIL: ' "$BASELINE_DIR/baseline-check.log" | awk '{print $3}' | sort -u)
 
@@ -209,24 +212,34 @@ Filed as separate bug ticket: #<NEW>
 Routing to code-review for judgment review.
 ```
 
-Out-of-scope routing actions — three commands, all required:
+Out-of-scope routing actions — three commands, all required. **Per [[Pipeline]] gotcha, `gh project item-add` does NOT auto-set Status — the item lands invisible to the board's column queries. You must explicitly set Status after adding.** Resolve the Status field + Inbox option IDs at runtime (they can churn across `updateProjectV2Field` mutations, per the 2026-05-22 lesson).
 
 ```bash
 # A. File the bug ticket on board #1
 url=$(gh issue create --repo pyrycode/pyrycode \
   --title "<PRE_EXISTING-names>: pre-existing failures unmasked by PR #<PR>" \
   --label "bug" --label "size:s" \
-  --body-file bug.md)
-gh project item-add 1 --owner pyrycode --url "$url" --format json
-# bug.md body: list of PRE_EXISTING names, the PR #, the baseline-comparison
+  --body-file /tmp/bug.md)
+# /tmp/bug.md body: list of PRE_EXISTING names, the PR #, the baseline-comparison
 # evidence (both make check tails, with token redaction), and "cause not yet
 # diagnosed" unless you've identified it.
 
-# B. Apply done:qa to the original ticket (NO needs-rework label)
-# (Skip — the dispatcher applies done:qa automatically when no needs-rework label is present.)
+# A.1 Add to board #1, capture item ID, set Status = Inbox.
+item_id=$(gh project item-add 1 --owner pyrycode --url "$url" --format json --jq '.id')
+field_json=$(gh project field-list 1 --owner pyrycode --format json)
+status_field_id=$(echo "$field_json" | jq -r '.fields[] | select(.name == "Status") | .id')
+inbox_option_id=$(echo "$field_json" | jq -r '.fields[] | select(.name == "Status") | .options[] | select(.name == "Inbox") | .id')
+gh project item-edit \
+  --project-id "$(gh project view 1 --owner pyrycode --format json --jq '.id')" \
+  --id "$item_id" \
+  --field-id "$status_field_id" \
+  --single-select-option-id "$inbox_option_id"
 
-# C. Post the PR review as --comment (not --request-changes)
-gh pr review <PR-number> --comment --body-file review.md --repo pyrycode/pyrycode
+# B. Apply done:qa to the original ticket (NO needs-rework label).
+# Skip — the dispatcher applies done:qa automatically when no needs-rework label is present.
+
+# C. Post the PR review as --comment (not --request-changes).
+gh pr review <PR-number> --comment --body-file /tmp/review.md --repo pyrycode/pyrycode
 ```
 
 ### Build-failure template (case: `make build` red)
