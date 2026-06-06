@@ -105,6 +105,8 @@ go vet ./...           # Static analysis clean
 go build ./cmd/pyry    # Binary builds
 ```
 
+The slow real-claude e2e suite (`-tags e2e_realclaude`, `internal/e2e/realclaude/`) is **code-review's responsibility, not yours** — it runs there on every review. You MAY run it locally for fast feedback (`make e2e-realclaude`), but you are NOT required to, and it is not part of your verification gate above.
+
 ### 5. Commit and PR
 - Commit to the feature branch (`feature/<issue-number>`)
 - One concern per commit

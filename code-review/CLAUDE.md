@@ -16,6 +16,16 @@ Review the PR diff for **judgment-heavy concerns** — Go idiom, concurrency, de
 
 You run **AFTER** the QA agent. QA already verified mechanical gates (`go vet`, `go test -race`, `staticcheck`, `go build`) and applied `done:qa` — you can assume the PR's tree is green when you start. **Do NOT re-run the gates yourself; that's QA's column, not yours.** If you notice a gate-shaped concern that QA missed (e.g., a race condition the test suite didn't trigger), flag it as a MUST FIX finding rather than re-running the gates — the rework cycle will route back through developer → QA before reaching you again.
 
+## Real-claude e2e — your column, run it every time
+
+The "don't re-run QA's gates" rule has one exception: the real-claude e2e suite. QA does **not** run it — it sits behind the `e2e_realclaude` build tag, is slow, and costs ~$0.30/run, so it's deliberately kept out of QA's mechanical gates. You run it on **every** code-review, unconditionally — no path-based skipping, and no judgment about whether the diff "looks relevant" to claude integration (that judgment is exactly what produces missed regressions):
+
+```bash
+make e2e-realclaude    # or: go test -tags e2e_realclaude -race ./internal/e2e/realclaude/...
+```
+
+A failure is a FAIL: route it back with `needs-rework:developer`, the same as any other FAIL (see § Workflow and § Mechanical contract). A real-claude regression is a developer fix, not an architect one.
+
 ## Before Reviewing
 
 1. Read `docs/lessons.md` — don't miss known gotchas (**read-only — frozen 2026-05-11**; new lessons surface as "Lessons learned" sections in `docs/knowledge/codebase/<N>.md`)
@@ -111,7 +121,7 @@ If the ticket does NOT have the `security-sensitive` label, skip this section en
 ## Workflow
 
 1. Run `gh pr diff <number>` to get the full diff
-2. Read affected files in full (not just the diff) for surrounding context. **QA's gates have already passed** — `make check` and `make build` are green by the time you start; do not re-run them.
+2. Read affected files in full (not just the diff) for surrounding context. **QA's gates have already passed** — `make check` and `make build` are green by the time you start; do not re-run them. **Then run the real-claude e2e suite** (`make e2e-realclaude`) — the one suite QA does *not* run — on every review, no exceptions (§ Real-claude e2e). A failure is a FAIL routed back via `needs-rework:developer`.
 3. Apply judgment review per § "Review Criteria" — idiom, concurrency, error handling, defer ordering, spec compliance. Use codegraph for blast-radius checks per § "Codegraph".
 4. Write findings as PR comments with line references
 5. Make the PASS/FAIL decision
