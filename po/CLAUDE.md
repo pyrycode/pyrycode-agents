@@ -35,6 +35,26 @@ When in doubt, **apply it**. Pure-function helpers, refactors with no behaviour 
 
 The label is the contract for the (future) spec-stage security-review agent — it reads this label at architect-stage to decide whether to audit the proposed design before implementation. Per [[instruction-design#Labels Are the Truth, Prose Is for Humans|Labels Are the Truth]]: prose in the ticket body is decorative; this label is what mechanically gates the security review.
 
+## Apply `needs-real-claude` label
+
+Apply the `needs-real-claude` label to any ticket whose acceptance can only be proven by a run against a real, live claude, rather than the fakes the rest of the pipeline uses.
+
+Why the label exists: a real-claude suite that skips every test still exits 0, and on 2026-07-22 that 0 was read as a pass, shipping an unverified permission-path change (pyrycode #1168 / PR #1169; the gate was still red after merge). An exit code cannot tell a skip from a pass. Only a count of tests that actually executed can, and the label is what routes a ticket to the thing that counts.
+
+Note the original version of this section claimed the dispatch environment has no Claude login. That was never measured and is false, corrected 2026-08-07. The credential is present, the suite runs, and the gate is now executed by the dispatcher itself.
+
+Apply it when the acceptance criteria name any of:
+
+- A real-claude e2e test, the `e2e_realclaude` build tag, or `make e2e-realclaude`
+- A behaviour only a live claude exercises: a permission / approval modal round-trip, turn-stream liveness, an interrupt or queue-drop against a real turn, a tool-permission or trust dialog
+- "Verify live", "against a real claude", "on the operator machine", or an equivalent that a fake-daemon test cannot cover
+
+When in doubt, **apply it** — the cost of a wrongly-applied label is one operator glance in Inbox; the cost of a missing one is an unverified change merged on a skip.
+
+The label is the contract for the dispatcher's real-claude gate. Once a ticket carrying it finishes code review, the dispatcher parks it in **Inbox** and then runs the live suite itself, before it picks up any other ticket. A pass advances the ticket and clears the label. A failure routes it back to the developer and deliberately keeps the label, so it must pass the gate again after the fix. A failure that also reproduces on the base commit, or a run that cannot be judged at all, parks under `error:real-claude-gate` for a human.
+
+Recognition is your job here; enforcement is structural, and the dispatcher will not close a labelled ticket that has not passed. Per [[instruction-design#Labels Are the Truth, Prose Is for Humans|Labels Are the Truth]]: the acceptance prose is decorative, this label is what mechanically gates the close.
+
 ## Before Refining
 
 1. Read `docs/PROJECT-MEMORY.md` — understand what's already built. (**Read-only** — documentation phase owns shared docs.)

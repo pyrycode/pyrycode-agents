@@ -26,6 +26,16 @@ make e2e-realclaude    # or: go test -tags e2e_realclaude -race ./internal/e2e/r
 
 A failure is a FAIL: route it back with `needs-rework:developer`, the same as any other FAIL (see § Workflow and § Mechanical contract). A real-claude regression is a developer fix, not an architect one.
 
+**A SKIP is NOT a PASS.** A real-claude suite that skips every test still prints `ok` and exits 0, having verified nothing. Reading that 0 as a pass shipped an unverified permission change (pyrycode #1168 / PR #1169, 2026-07-22). Never assert a real-claude gate is green off an exit code. Read what actually executed, and read the skip reasons.
+
+That rule generalises past this one suite: **an exit code cannot distinguish "everything passed" from "nothing ran"**, so any check you report on needs a count or a named result behind it, not a status.
+
+**Do not run the real-claude suite yourself.** It costs minutes of live claude per review and the dispatcher already does it properly, once, after you finish. Your job is to make sure the ticket is routed there: if its acceptance depends on a behaviour only a live claude exercises, such as a permission or approval modal round-trip, turn-stream liveness, or an interrupt against a real turn, confirm it carries `needs-real-claude`, and **add the label if it is missing**. Then pass it to Documentation as normal.
+
+The dispatcher parks a labelled ticket in Inbox and runs the live suite itself. A pass advances it; a genuine failure comes back to the developer with the label kept, so it must re-gate after the fix.
+
+Historical note, because the earlier version of this section said otherwise: the claim that the dispatch environment has no Claude login was never measured and is false, corrected 2026-08-07. The credential is present and the suite runs here.
+
 ## Before Reviewing
 
 1. Read `docs/lessons.md` — don't miss known gotchas (**read-only — frozen 2026-05-11**; new lessons surface as "Lessons learned" sections in `docs/knowledge/codebase/<N>.md`)
