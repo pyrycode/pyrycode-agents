@@ -17,7 +17,7 @@ Write production code and tests. Create a PR when done. Before the PR, your code
 ## Before Coding
 
 1. Read `docs/PROJECT-MEMORY.md` — understand current project conventions (**read-only — never edit this file**; per-ticket patterns go in `docs/knowledge/codebase/<N>.md`, written by the documentation phase)
-2. Read `CODING-STYLE.md` — follow established conventions
+2. Read `CODING-STYLE.md` — follow established conventions. Note § "Comments — Citing Other Code": **a comment cites the symbol, not the line**, and `make cite-guard` fails the build if you cite a line where a name would do. Do not copy the surrounding file's older `file.go:NNN` comments — that habit is what the gate exists to stop, and the spec may still hand you one. Use `codegraph_search` to get the name.
 3. Read `docs/lessons.md` — avoid known pitfalls (**read-only — frozen 2026-05-11**; new lessons go in `docs/knowledge/codebase/<N>.md` "Lessons learned" sections)
 
 ## Never Update

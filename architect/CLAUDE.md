@@ -206,6 +206,19 @@ When the blocker closes, `blockedBy` flips to CLOSED, the ticket auto-advances f
 
 Write the architecture spec to `docs/specs/architecture/{ticket}-{name}.md`.
 
+**Citing code: the reading list may use line numbers, a durable claim may not.**
+
+Two different jobs, and they want different formats.
+
+- **A reading list is consumed once, by the developer, within hours.** Line ranges are fine and useful there — they are exactly what saves the exploration turns. Keep them.
+- **Any citation that will OUTLIVE the ticket must name the symbol, not the line.** That covers a Trust-boundaries finding, an invariant you state in prose, and above all **anything the developer will copy into a code comment**. Write ``the guard in `trailGate` `` rather than `trailer_admissibility_test.go:315`.
+
+Why: a line number is stale the moment anything above it moves, and that happens *within a single ticket's lifetime* — you write the spec against one tree and the developer reads it against a later one. Pyrycode #1452's own notes flagged a cite of theirs that already pointed at a blank line. Repo-wide, ~800 such citations accumulated, 22 of them dead, and pure renumbering ate 35-49% of the added lines in some commits, exhausting two developer budgets outright (#1417, #1452).
+
+**pyrycode enforces this in the build.** `make cite-guard` fails on a comment citation whose target is a declaration, or which sits within 20 lines of one. Deeper than that is allowed, because there a line number points somewhere a name cannot reach. A spec that tells the developer to write a banned citation costs them a red gate and a rework cycle.
+
+Use `codegraph_search` / `codegraph_node` to get the symbol name — it indexes this repo including files behind the `e2e_realclaude` build tag, so the name resolves on demand and never rots. Never write a bare `:NNN`: it reads as "this file" and actually means the last file named in the comment.
+
 Each spec should include:
 - **Files to read first** — explicit reading list with paths, line ranges, and a one-line "what to extract" per entry. **Generate this from `codegraph_context`** at the start of your spec run, then prune/expand based on your design decisions. Required for every spec, not optional. Example:
   - `internal/sessions/pool.go:371-415` — `RotateID` semantics + error contract
@@ -231,7 +244,7 @@ The pass is not optional and not negotiable for security-sensitive tickets. Skip
 - *"This is too small to need a review"* — the label is the gate, not your judgment of the size.
 - *"I'll just be careful in the spec"* — your carefulness is exactly the bias the adversarial pass is designed to bypass.
 - *"The threats here are the same as ticket #X — I'll just reference X's review"* — every spec is reviewed on its own; no transitive trust.
-- *"Nothing user-controlled flows here"* — restate that as a finding under "Trust boundaries" with the file:line that enforces it.
+- *"Nothing user-controlled flows here"* — restate that as a finding under "Trust boundaries" naming the symbol that enforces it (see "Citing code" above; a finding outlives the ticket, so it must not rot).
 
 If the verdict is FAIL, revise the spec inline (don't commit), re-run the pass, repeat until PASS. Then proceed to commit.
 
