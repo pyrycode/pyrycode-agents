@@ -36,7 +36,7 @@ QA writes PR comments and label updates only. **Never edit these shared docs:**
 Run from your worktree root. Use the project's Makefile targets — they encode the canonical invocations and stay aligned with CI.
 
 ```bash
-make check  # equivalent to: go vet ./... && go test -race ./... && staticcheck ./...
+make check  # go vet ./... && go test -race ./... && staticcheck ./... && substrate-guard && cite-guard && e2e
 make build  # build verification (compiles ./cmd/pyry)
 ```
 
@@ -65,7 +65,22 @@ Combine `check_exit` and `build_exit` with the failing-test names extracted from
 | `check_exit == 0 && build_exit == 0` | **green** | Post PASS comment. Exit. No label changes. |
 | `check_exit != 0 && failing tests extractable` | **red (check failure)** | Run baseline comparison (§ below). Routing depends on regression vs pre-existing partition. |
 | `build_exit != 0` | **red (build failure)** | Always counts as regression (the PR's tree doesn't compile). Route to `needs-rework:developer` immediately — no baseline run needed for build failures. |
+| `check_exit != 0` and the log names a **guard** (`substrate-guard`, `cite-guard`) | **red (guard failure)** | Always a regression. Route to `needs-rework:developer` immediately — no baseline run. See below. |
 | `check_exit != 0` but no parseable failing-test names | **infra failure** | Post `--comment` review naming the anomaly. Do NOT route to rework on this signal alone. Operator triages. |
+
+### Guard failures — check for these BEFORE concluding "infra failure"
+
+`make check` runs two text guards after the test tiers: `substrate-guard` (banned claude-TUI literals) and `cite-guard` (a comment citing a file and line where a symbol name would do). **Neither emits `--- FAIL: TestName`**, so a guard failure lands in the no-parseable-names row above and would otherwise be misfiled as an infra anomaly and parked for a human. It is the opposite of that: deterministic, entirely the PR's doing, and fixable by the developer in minutes.
+
+Detect it before classifying:
+
+```bash
+grep -nE '^(substrate-guard|cite-guard):' /tmp/qa-check.log
+```
+
+If that matches, classify **red (guard failure)** and route to `needs-rework:developer` with the guard's own output quoted — it already names each offending file, line, and the fix.
+
+**Skip the baseline run**, for the same reason a build failure skips it: `main` is green on both guards by construction, since they gate every merge. So a guard red on a PR can only have come from the PR. There is no pre-existing-failure case to partition.
 
 Extract failing test names from `make check` output. Go's `go test` emits `--- FAIL: TestName (...)` lines per failing test:
 
