@@ -208,10 +208,13 @@ Write the architecture spec to `docs/specs/architecture/{ticket}-{name}.md`.
 
 **Citing code: the reading list may use line numbers, a durable claim may not.**
 
-Two different jobs, and they want different formats.
+**Name the symbol. Everywhere in the spec, including the reading list.**
 
-- **A reading list is consumed once, by the developer, within hours.** Line ranges are fine and useful there — they are exactly what saves the exploration turns. Keep them.
-- **Any citation that will OUTLIVE the ticket must name the symbol, not the line.** That covers a Trust-boundaries finding, an invariant you state in prose, and above all **anything the developer will copy into a code comment**. Write ``the guard in `trailGate` `` rather than `trailer_admissibility_test.go:315`.
+Write ``the guard in `trailGate` `` rather than `trailer_admissibility_test.go:315`. The developer resolves a name with `codegraph_search` faster than it opens a file at a line, and the name is still correct next week.
+
+This applies to the reading list too, and that is a deliberate reversal of an earlier version of this rule which said ranges were fine there. **Measured across four merged tickets: the developer wrote 82 line citations into code comments, and only 6 were copied verbatim from a spec.** So direct copying is small. But a spec carrying 24-33 citations teaches the developer that this is how the house references code, and verbatim overlap cannot measure that. On #1417 the developer wrote **71** citations of its own into comments, and #1417 is a ticket that timed out twice on citation churn.
+
+Use a line range only where the region genuinely is not a symbol, and say why.
 
 Why: a line number is stale the moment anything above it moves, and that happens *within a single ticket's lifetime* — you write the spec against one tree and the developer reads it against a later one. Pyrycode #1452's own notes flagged a cite of theirs that already pointed at a blank line. Repo-wide, ~800 such citations accumulated, 22 of them dead, and pure renumbering ate 35-49% of the added lines in some commits, exhausting two developer budgets outright (#1417, #1452).
 
@@ -220,11 +223,11 @@ Why: a line number is stale the moment anything above it moves, and that happens
 Use `codegraph_search` / `codegraph_node` to get the symbol name — it indexes this repo including files behind the `e2e_realclaude` build tag, so the name resolves on demand and never rots. Never write a bare `:NNN`: it reads as "this file" and actually means the last file named in the comment.
 
 Each spec should include:
-- **Files to read first** — explicit reading list with paths, line ranges, and a one-line "what to extract" per entry. **Generate this from `codegraph_context`** at the start of your spec run, then prune/expand based on your design decisions. Required for every spec, not optional. Example:
-  - `internal/sessions/pool.go:371-415` — `RotateID` semantics + error contract
-  - `internal/sessions/rotation/watcher.go:140-180` — exact-match probe check the test must satisfy
+- **Files to read first** — explicit reading list with paths, **the symbols to read**, and a one-line "what to extract" per entry. **Generate this from `codegraph_context`** at the start of your spec run, then prune/expand based on your design decisions. Required for every spec, not optional. `codegraph_context` already returns symbols, so writing names is the direct output and converting them to line numbers is an extra step that loses accuracy. Example:
+  - `internal/sessions/pool.go` → `RotateID` — semantics + error contract
+  - `internal/sessions/rotation/watcher.go` → `probeMatchesExact` — the check the test must satisfy
   - `internal/e2e/restart_test.go` — reuse `newRegistryHome` / `readRegistry` helpers
-  - `internal/e2e/harness.go:220-260` — `Start` / `StartIn` patterns the new constructor mirrors
+  - `internal/e2e/harness.go` → `Start`, `StartIn` — the patterns the new constructor mirrors
   - `docs/lessons.md` § "Claude session storage on disk" — encoded-cwd rule (`/` AND `.` → `-`)
 
   This is the developer's turn-1 data load. Without it, exploration costs 20–30 turns of greps the architect could have prevented. Pyrycode #55 burned 84% of its 50-turn budget rediscovering files cited in this spec's prose. **`codegraph_context "<ticket title + AC paraphrase>"`** returns this set in one structured query — entry points + related symbols across files with line refs. Lift the relevant entries into the spec, prune the off-topic ones, add any docs/lessons references codegraph won't know about (it parses code, not markdown). **Same upstream-push pattern as the size check itself** — when the upstream agent has the same information, push the responsibility upstream rather than create artificial chokepoints downstream.
@@ -258,7 +261,7 @@ If the ticket does NOT have the `security-sensitive` label, skip this step entir
 
 - Does any single code block run > 20 lines? Replace with: signature + 1-line behavior summary + reference to the test that asserts the invariant.
 - Are tests written as full function bodies (the actual code you'd paste into a test file)? Replace with bullet-pointed scenarios describing inputs + expected behavior; the developer writes the test code in the project's testing idiom.
-- Did you copy-paste code from an existing file? Reference the file:line in "Files to read first" instead — the developer will Read it on demand.
+- Did you copy-paste code from an existing file? Name the symbol in "Files to read first" instead — the developer will resolve it with codegraph and Read it on demand.
 
 If a code block survives this check, ask: "is this defining a contract, or pre-writing what the developer will write?" Keep contract sketches; cut implementation pre-writes.
 
