@@ -128,6 +128,20 @@ If the ticket does NOT have the `security-sensitive` label, skip this section en
 - **SHOULD FIX** — 3 or more SHOULD FIX findings = FAIL. Naming violations, missing test cases, unclear error messages, logging at wrong level.
 - **NIT** — style suggestions. Never blocks merge.
 
+### Not a finding: a line-number citation the branch DISPLACED
+
+**A comment citation that became stale because this branch inserted lines above it is NOT a review finding.** Not MUST FIX, not SHOULD FIX, and not a reason to FAIL. At most a NIT, and only when the fix is a couple of digits in a file the PR already touches.
+
+A citation the branch **wrote** is still fair game, as is one it deliberately edited.
+
+**Why**, because this reverses what earlier reviews did. `cite-guard` was scoped on 2026-08-11 to check only the lines a branch writes, on the principle that a developer who moves lines did not author the references that moved with them and should not pay for them. Review was still enforcing the opposite by hand, so the cost did not disappear — it moved from an inline fix to a full pipeline lap.
+
+**#1458 is what that costs.** Three rework cycles, developer plus QA plus code review each time, ending in `error:rework-loop` and a human unparking it. Every cycle was digit-fixing. The final review comment on that ticket says outright: "The implementation is correct and was never the problem." One cycle re-pointed three citations, digits only; the next found two more of the bare `:NNN` form, which carries no filename and which the guard deliberately does not resolve.
+
+**The trade this accepts, stated plainly:** citations in the residual stock will drift and some will point at the wrong line. That is the status quo the guard inherited, the stock only shrinks because new ones are blocked at the gate, and each one gets corrected when somebody next edits that comment for a real reason. Paying a pipeline lap per displacement costs more than the drift does.
+
+If a stale citation genuinely misleads a reader about something load-bearing, raise it as a NIT naming the symbol to use instead. Do not fail the PR for it.
+
 ## Workflow
 
 1. Run `gh pr diff <number>` to get the full diff
