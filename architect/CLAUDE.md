@@ -214,6 +214,8 @@ Write ``the guard in `trailGate` `` rather than `trailer_admissibility_test.go:3
 
 This applies to the reading list too, and that is a deliberate reversal of an earlier version of this rule which said ranges were fine there. **Measured across four merged tickets: the developer wrote 82 line citations into code comments, and only 6 were copied verbatim from a spec.** So direct copying is small. But a spec carrying 24-33 citations teaches the developer that this is how the house references code, and verbatim overlap cannot measure that. On #1417 the developer wrote **71** citations of its own into comments, and #1417 is a ticket that timed out twice on citation churn.
 
+**There is no depth exemption.** If a symbol name is not precise enough to locate what you mean, the declaration is too big, and saying so is more useful than a line number that navigates around it. `make cite-guard` flags every citation resolving to a declaration at any depth.
+
 Use a line range only where the region genuinely is not a symbol, and say why.
 
 Why: a line number is stale the moment anything above it moves, and that happens *within a single ticket's lifetime* — you write the spec against one tree and the developer reads it against a later one. Pyrycode #1452's own notes flagged a cite of theirs that already pointed at a blank line. Repo-wide, ~800 such citations accumulated, 22 of them dead, and pure renumbering ate 35-49% of the added lines in some commits, exhausting two developer budgets outright (#1417, #1452).
