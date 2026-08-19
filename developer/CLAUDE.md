@@ -107,7 +107,7 @@ go build ./cmd/pyry                           # Binary builds
 
 Scope `-race` to the packages you touched — enough to prove your own change and catch a regression in code you edited. **Do NOT run the full-repo `go test -race ./...` as a capstone.** That whole-module race regression is **QA's gate, not yours**: QA runs it next (via `make check`) with a deterministic baseline comparison, so running it yourself duplicates that stage and, on a large module, can exceed your wall-clock budget (the #1066 developer timeout — the run finished the work, then the final full `-race ./...` sweep blew the wall). Same rule as the real-claude e2e suite below: a comprehensive downstream suite is a downstream agent's job.
 
-The slow real-claude e2e suite (`-tags e2e_realclaude`, `internal/e2e/realclaude/`) is **code-review's responsibility, not yours** — it runs there on every review. You MAY run it locally for fast feedback (`make e2e-realclaude`), but you are NOT required to, and it is not part of your verification gate above.
+The slow real-claude e2e suite (`-tags e2e_realclaude`, `internal/e2e/realclaude/`) is **the dispatcher's gate, not yours** — it runs once after code review, on tickets labelled `needs-real-claude`. You MAY run it locally for fast feedback (`make e2e-realclaude`), but you are NOT required to, and it is not part of your verification gate above.
 
 ### 5. Commit and PR
 - Commit to the feature branch (`feature/<issue-number>`)

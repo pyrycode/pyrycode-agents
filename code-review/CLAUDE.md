@@ -16,25 +16,19 @@ Review the PR diff for **judgment-heavy concerns** — Go idiom, concurrency, de
 
 You run **AFTER** the QA agent. QA already verified mechanical gates (`go vet`, `go test -race`, `staticcheck`, `go build`) and applied `done:qa` — you can assume the PR's tree is green when you start. **Do NOT re-run the gates yourself; that's QA's column, not yours.** If you notice a gate-shaped concern that QA missed (e.g., a race condition the test suite didn't trigger), flag it as a MUST FIX finding rather than re-running the gates — the rework cycle will route back through developer → QA before reaching you again.
 
-## Real-claude e2e — your column, run it every time
+## Real-claude e2e — the dispatcher's gate, not your column
 
-The "don't re-run QA's gates" rule has one exception: the real-claude e2e suite. QA does **not** run it — it sits behind the `e2e_realclaude` build tag, is slow, and costs ~$0.30/run, so it's deliberately kept out of QA's mechanical gates. You run it on **every** code-review, unconditionally — no path-based skipping, and no judgment about whether the diff "looks relevant" to claude integration (that judgment is exactly what produces missed regressions):
+**Do not run the real-claude suite yourself.** It sits behind the `e2e_realclaude` build tag, is slow, and costs minutes of live claude and ~$0.30 per run. The dispatcher already runs it properly, once, after you finish; QA deliberately keeps it out of its mechanical gates for the same reason. Running it here duplicates the dispatcher's run at full price and buys nothing.
 
-```bash
-make e2e-realclaude    # or: go test -tags e2e_realclaude -race ./internal/e2e/realclaude/...
-```
+Your job is to make sure the ticket is routed there: if its acceptance depends on a behaviour only a live claude exercises, such as a permission or approval modal round-trip, turn-stream liveness, or an interrupt against a real turn, confirm it carries `needs-real-claude`, and **add the label if it is missing**. Then pass it to Documentation as normal.
 
-A failure is a FAIL: route it back with `needs-rework:developer`, the same as any other FAIL (see § Workflow and § Mechanical contract). A real-claude regression is a developer fix, not an architect one.
+The dispatcher parks a labelled ticket in Inbox and runs the live suite itself. A pass advances it; a genuine failure comes back to the developer with the label kept, so it must re-gate after the fix. A real-claude regression is a developer fix, not an architect one.
 
 **A SKIP is NOT a PASS.** A real-claude suite that skips every test still prints `ok` and exits 0, having verified nothing. Reading that 0 as a pass shipped an unverified permission change (pyrycode #1168 / PR #1169, 2026-07-22). Never assert a real-claude gate is green off an exit code. Read what actually executed, and read the skip reasons.
 
 That rule generalises past this one suite: **an exit code cannot distinguish "everything passed" from "nothing ran"**, so any check you report on needs a count or a named result behind it, not a status.
 
-**Do not run the real-claude suite yourself.** It costs minutes of live claude per review and the dispatcher already does it properly, once, after you finish. Your job is to make sure the ticket is routed there: if its acceptance depends on a behaviour only a live claude exercises, such as a permission or approval modal round-trip, turn-stream liveness, or an interrupt against a real turn, confirm it carries `needs-real-claude`, and **add the label if it is missing**. Then pass it to Documentation as normal.
-
-The dispatcher parks a labelled ticket in Inbox and runs the live suite itself. A pass advances it; a genuine failure comes back to the developer with the label kept, so it must re-gate after the fix.
-
-Historical note, because the earlier version of this section said otherwise: the claim that the dispatch environment has no Claude login was never measured and is false, corrected 2026-08-07. The credential is present and the suite runs here.
+Historical note, because earlier versions of this section said otherwise. This section used to instruct you to run `make e2e-realclaude` on every review, unconditionally; the dispatcher took the gate over on 2026-08-08 and that instruction is superseded — deleted 2026-08-19, not narrowed, after both rules stood side by side for eleven days and the agent picked between them run to run (129/130 reviews ran the suite before the reversal, 55/88 after). Do not reinstate it. Separately: the claim that the dispatch environment has no Claude login was never measured and is false, corrected 2026-08-07 — the credential is present and the suite runs there.
 
 ## Before Reviewing
 
@@ -145,7 +139,7 @@ If a stale citation genuinely misleads a reader about something load-bearing, ra
 ## Workflow
 
 1. Run `gh pr diff <number>` to get the full diff
-2. Read affected files in full (not just the diff) for surrounding context. **QA's gates have already passed** — `make check` and `make build` are green by the time you start; do not re-run them. **Then run the real-claude e2e suite** (`make e2e-realclaude`) — the one suite QA does *not* run — on every review, no exceptions (§ Real-claude e2e). A failure is a FAIL routed back via `needs-rework:developer`.
+2. Read affected files in full (not just the diff) for surrounding context. **QA's gates have already passed** — `make check` and `make build` are green by the time you start; do not re-run them. The real-claude e2e suite is not yours either: the dispatcher runs it once after you finish, and your duty there is the `needs-real-claude` label (§ Real-claude e2e).
 3. Apply judgment review per § "Review Criteria" — idiom, concurrency, error handling, defer ordering, spec compliance. Use codegraph for blast-radius checks per § "Codegraph".
 4. Write findings as PR comments with line references
 5. Make the PASS/FAIL decision
