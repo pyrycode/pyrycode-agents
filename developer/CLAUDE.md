@@ -16,9 +16,9 @@ Write production code and tests. Create a PR when done. Before the PR, your code
 
 ## Before Coding
 
-1. Read `docs/PROJECT-MEMORY.md` — understand current project conventions (**read-only — never edit this file**; per-ticket patterns go in `docs/knowledge/codebase/<N>.md`, written by the documentation phase)
+1. Read `docs/PROJECT-MEMORY.md` — understand current project conventions (**read-only — never edit this file**; patterns and lessons go in the package overview at `docs/knowledge/features/<package>.md`, written by the documentation phase)
 2. Read `CODING-STYLE.md` — follow established conventions. Note § "Comments — Citing Other Code": **a comment cites the symbol, not the line**, and `make cite-guard` fails the build if you cite a line where a name would do. Do not copy the surrounding file's older `file.go:NNN` comments — that habit is what the gate exists to stop, and the spec may still hand you one. Use `codegraph_search` to get the name.
-3. Read `docs/lessons.md` — avoid known pitfalls (**read-only — frozen 2026-05-11**; new lessons go in `docs/knowledge/codebase/<N>.md` "Lessons learned" sections)
+3. Read `docs/lessons.md` — avoid known pitfalls (**read-only — frozen 2026-05-11**; new lessons go into the package overview at `docs/knowledge/features/<package>.md`). The package overview for the package you are touching is the doc most likely to hold a lesson that applies to you — read that too.
 
 ## Never Update
 
@@ -26,9 +26,10 @@ You write code (`src/`, `test/`) only. **Never edit these shared docs:**
 - `docs/PROJECT-MEMORY.md` — human-maintained
 - `docs/lessons.md` — frozen
 - `docs/knowledge/INDEX.md` — documentation phase appends here, no one else
-- `docs/knowledge/codebase/<N>.md` — documentation phase owns this. If a sibling ticket's knowledge doc is useful, read it; never write your own. Writing this file inside the implementation turn budget consistently pushed runs over the cap (#471, #478 both hit max_turns at turn 71 with the knowledge doc partially written) — it now lives entirely in the documentation phase, which writes it from the merged diff + the spec.
+- `docs/knowledge/features/<package>.md` — documentation phase owns these. Read them freely; never write one. Writing docs inside the implementation turn budget consistently pushed runs over the cap (#471, #478 both hit max_turns at turn 71 with the knowledge doc partially written), so all doc writes live in the documentation phase.
+- `docs/knowledge/codebase/<N>.md` — **frozen 2026-08-19.** Historical per-ticket notes. Read them if a sibling ticket's is useful; nothing new is ever added there.
 
-If you discover a lesson worth recording, capture it as a "Lessons learned" bullet in your PR body. The documentation phase lifts those bullets into the knowledge doc — you don't write the doc itself.
+If you discover a lesson worth recording, capture it as a "Lessons learned" bullet in your PR body. The documentation phase folds those bullets into the package overview — you don't write the doc itself. Record the thing that would have gone wrong, not what you built: a design you rejected and why, a test that would have passed green while broken, a trap that cost you a cycle. The diff already says what shipped.
 4. Search QMD for related code patterns:
    ```
    mcp__qmd__query(collection: "pyrycode-docs", query: "<feature area>")
@@ -116,7 +117,7 @@ The slow real-claude e2e suite (`-tags e2e_realclaude`, `internal/e2e/realclaude
   - **Summary**: one paragraph — what changed and why
   - **Issue**: `Closes #N`
   - **Testing**: one-line verification (e.g. `go test -race` on touched packages + `go vet ./...` pass; QA runs the full-module race gate)
-  - **Lessons learned** (optional): bulleted, only if something non-obvious surfaced. The documentation phase lifts these into `docs/knowledge/codebase/<N>.md`.
+  - **Lessons learned** (optional): bulleted, only if something non-obvious surfaced. The documentation phase folds these into the package overview. Omit the section entirely when nothing did — an empty lesson is worse than none.
 
 The spec at `docs/specs/architecture/<N>-*.md` is the authoritative record of design decisions. Code review reads the spec, not the PR body — do not restate the spec's contents or mirror its AC list in your PR. A short PR body is the target shape; long PR bodies were a fixed-cost tail that contributed to max_turns salvages (#471, #478).
 

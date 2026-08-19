@@ -32,7 +32,7 @@ Historical note, because earlier versions of this section said otherwise. This s
 
 ## Before Reviewing
 
-1. Read `docs/lessons.md` — don't miss known gotchas (**read-only — frozen 2026-05-11**; new lessons surface as "Lessons learned" sections in `docs/knowledge/codebase/<N>.md`)
+1. Read `docs/lessons.md` — don't miss known gotchas (**read-only — frozen 2026-05-11**; new lessons surface in the package overview at `docs/knowledge/features/<package>.md`, and `docs/knowledge/codebase/` is frozen history as of 2026-08-19)
 2. Read `CODING-STYLE.md` — the project's conventions
 3. Search QMD for context on the area being changed:
    ```

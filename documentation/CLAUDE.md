@@ -49,23 +49,29 @@ If the system design changed:
 
 ## Always Update
 
-1. **`docs/knowledge/codebase/<ticket-number>.md`** — write a NEW per-ticket file with the implementation summary, patterns established, AND any lessons learned by this ticket. One file per ticket; never edit a sibling ticket's file. The directory listing of `docs/knowledge/codebase/` IS the index — see `docs/knowledge/codebase/README.md` for what belongs in a ticket file.
+1. **The package overview at `docs/knowledge/features/<package>.md`** — fold this ticket's lessons into the document covering the package the work touched. **Do not write a per-ticket file.** `docs/knowledge/codebase/` is frozen as of 2026-08-19: read it as history, never add to it.
 
-    **You are the SOLE writer of this file.** As of the 2a contract change, no other agent (architect, developer, code-review) writes here — they cannot include it as an AC or as a deliverable. Sources you draw from when writing the doc:
-    - the architecture spec at `docs/specs/architecture/<N>-*.md` (intent, contract, files-to-read)
-    - the merged diff (what actually shipped)
-    - the PR body's optional **Lessons learned** section, if present (the developer flags non-obvious surprises there — lift those bullets into your "Lessons learned" section, verbatim where they're clear, paraphrased where the PR body is terse)
-    - the code-review PR comment (if a finding shaped the final implementation, that's worth a "Patterns established" line)
+    **Lessons only.** Not an implementation summary, not a file list, not a restatement of what shipped. The merged diff and the spec at `docs/specs/architecture/<N>-*.md` already hold those. Duplicating them is what produced 511 per-ticket files of which only 87 were ever opened by an agent other than the one that wrote them (measured 2026-08-19 across 1548 run logs). **If a ticket taught nothing that outlives it, add nothing.** A no-op documentation run is a correct outcome, not a failure.
+
+    A lesson earns its place when it records what would have gone wrong — a rejected design and why, a test that would have stayed green while broken, a trap that cost a cycle. What the code already says about itself is not a lesson. Sources:
+    - the PR body's optional **Lessons learned** section, if present (the developer flags non-obvious surprises there)
+    - the code-review PR comment, if a finding shaped the final implementation
+    - the spec, where it records a rejected alternative
+
+    **Put each lesson in the section it belongs to**, not in a bin at the bottom. A concurrency lesson goes under that document's concurrency section; a fixture lesson under its testing section. Do not create a "Lessons" or "Gotchas" heading — no package overview has one and none should gain one.
+
+    **Name the subject by symbol, never by line number.** `make cite-guard` fails the build otherwise.
 
 2. **`docs/knowledge/INDEX.md`** — add one-line summary for any new feature/decision/architecture doc you created. **You are the ONLY agent that writes here.** Combined with `serial: true` this guarantees no concurrent write conflicts.
 
 ## Never Update
 
-- **`docs/PROJECT-MEMORY.md`** — human-maintained project conventions. Appending here caused stranded PRs on 2026-05-09, 2026-05-10, and 2026-05-11 (across pyrycode + agent-dispatcher-v2 pipelines); the "Patterns established" section was dropped 2026-05-11 in the v2 project, and the same fix should propagate here. If you find yourself wanting to add a section here, the rule is: it goes in `codebase/<N>.md` instead.
-- **`docs/lessons.md`** — frozen 2026-05-11. Pre-existing content stays as historical reference. **New lessons go into the relevant ticket's `docs/knowledge/codebase/<N>.md`** under a "Lessons learned" section. Splitting lessons per-ticket eliminates the shared-append conflict surface (same fix shape as PROJECT-MEMORY.md).
+- **`docs/PROJECT-MEMORY.md`** — human-maintained project conventions. Appending here caused stranded PRs on 2026-05-09, 2026-05-10, and 2026-05-11 (across pyrycode + agent-dispatcher-v2 pipelines); the "Patterns established" section was dropped 2026-05-11 in the v2 project, and the same fix should propagate here. If you find yourself wanting to add a section here, it goes in the package overview instead.
+- **`docs/lessons.md`** — frozen 2026-05-11. Pre-existing content stays as historical reference. New lessons go into the package overview for the package the work touched.
+- **`docs/knowledge/codebase/<N>.md`** — **frozen 2026-08-19.** The 511 existing files stay as history and stay searchable via QMD. Never add one, never edit one.
 - **Pre-2026-05-10 frozen blocks** anywhere in the repo — historical content. Don't touch.
 
-The per-ticket-file convention exists because shared-append docs guarantee merge conflicts when two feature branches add to them on top of a marching-forward main — not just from concurrency, but from any branch that didn't merge before its peers added their entries. Per-ticket files eliminate the hot line entirely.
+Shared-append docs cause merge conflicts when two branches add to them on top of a marching-forward main. `serial: true` on this phase is what holds that line now: one documentation run at a time, so two runs never edit the same overview at once. Per-ticket files were the earlier fix for the same problem and were retired on 2026-08-19 — the write-safety they bought was real, but the archive they produced was read by nobody except this agent.
 
 ## Sole-writer guarantee (INDEX.md)
 
@@ -85,8 +91,11 @@ You (and only you) write to `docs/knowledge/INDEX.md`. The other four agents (po
 ```bash
 cd <your worktree>
 git add docs/
-git commit -m "docs: <one-line summary> (#<ticket>)"
+git diff --cached --quiet && echo "no doc changes for this ticket — nothing to commit" \
+  || git commit -m "docs: <one-line summary> (#<ticket>)"
 ```
+
+**An empty commit is not required and must not be forced.** Since lessons-only, a ticket that taught nothing outlives-worthy correctly leaves the tree clean. Report that as your outcome; do not invent a doc change to have something to commit.
 
 The dispatcher pushes your branch automatically after your run completes — you don't need to push. (A safety-net auto-commit runs unconditionally inside the worktree as a backstop, but agents that Write files should always commit explicitly.)
 
