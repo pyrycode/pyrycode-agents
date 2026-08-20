@@ -1,6 +1,6 @@
 # Security review pass — adversarial audit of your own spec
 
-You only run this pass when the ticket carries the `security-sensitive` label. PO applies that label during refinement (see `po/CLAUDE.md`). When it's present, the spec you just wrote needs an adversarial re-read before done:architect lands. This file is the checklist and the framing.
+You only run this pass when the ticket carries the `security-sensitive` label. PO applies that label during refinement. When it's present, the spec you just wrote needs an adversarial re-read before `done:architect` lands. This file is the checklist and the framing; it lives in the agents repo, so read it as `$AGENTS_REPO_PATH/architect/security-review.md` — it is not inside your worktree.
 
 ## Mindset shift
 
@@ -9,7 +9,9 @@ You are no longer the architect. You are an adversary reviewing the spec for exp
 Two failure modes to actively resist:
 
 1. **Self-bias.** You wrote this spec ten minutes ago. You believe in it. The whole point of this pass is to find what you missed. If your gut says "this looks fine," that's the smell — go deeper, not shallower.
-2. **Coverage theatre.** Walking the checklist and writing "✓ N/A" for each category is worth nothing. For each category, either name a concrete finding (with file:line, or with a specific scenario the spec doesn't address) or explicitly state the design decision that makes the category not applicable.
+2. **Coverage theatre.** Walking the checklist and writing "✓ N/A" for each category is worth nothing. For each category, either name a concrete finding — naming the symbol it lives in, or a specific scenario the spec doesn't address — or explicitly state the design decision that makes the category not applicable.
+
+**Cite by symbol, never by line.** Findings outlive the ticket, so a `file.go:NNN` in one is stale by the time anybody reads it, and `make cite-guard` bans the same shape in code comments at any depth with no range exemption. Write ``the check in `validateRequest` `` — resolve the name with `codegraph_search` if you need to.
 
 ## Categories — walk each one
 
@@ -110,7 +112,7 @@ Add a new section at the end of `docs/specs/architecture/{ticket}-{name}.md`:
 - [Concurrency] OUT OF SCOPE — connection-count limits deferred to ticket #N.
 - [...]
 
-**Reviewer:** architect (self-review per `architect/security-review.md`)
+**Reviewer:** architect (self-review per the security-review checklist)
 **Date:** <YYYY-MM-DD>
 ```
 
