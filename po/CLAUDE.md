@@ -123,6 +123,10 @@ A ticket ships as one `size:s` ticket only if **every** line below holds. Any on
 
 **This is the same table the architect applies**, twice — once against your body before designing, once against the written spec before committing. Using the same numbers is what makes the three checks reinforce each other instead of bouncing tickets between columns over a disagreement about units.
 
+**Every line above is a ceiling, not a shape to fill.** Write the criteria the slice actually needs — one per distinct observable behaviour it adds — and stop. A slice that needs two gets two. Padding to five makes the ticket read bigger than the work without pinning anything more.
+
+**This is not tidiness, because the architect sizes from the body you wrote.** A body inflated to the ceiling measures as an oversized ticket, gets split, and each child written back up to the ceiling measures oversized again. Measured 2026-08-24 on the #1714 family: it became #1728/#1729, then #1728 became #1730/#1731, then #1730 became #1732/#1733 — three rounds of splitting in one morning, none prompted by anything learned from writing code, and **each child's body was longer than the parent it was cut from** (3940 chars → 10531 → 18683). All seven tickets carried exactly five acceptance criteria. A limit that binds on every ticket regardless of size is not measuring the ticket; it is being used as a template.
+
 Count **total written work**, not production lines. Tests are the bulk of it and are not free: each test function is its own edit-and-debug cycle. A ticket you'd call "150 lines of production code" is routinely 400-600 lines of total written work once tests, helper functions, and per-branch log calls land. Three specs on 2026-05-16 sized by production LOC alone and came in at 541, 596, and 1071 actual lines; all three needed salvage.
 
 **These targets are deliberately tighter than the raw budget.** The developer has 135 turns and 25 minutes of wall clock. The table is calibrated well inside both because runs still hit the caps at this setting. Do not relax a line by reasoning that the developer "has plenty of turns."
