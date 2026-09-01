@@ -87,6 +87,16 @@ Stale-branch conflicts can still occur if main moved during your run. If `docs/k
 - **Link generously.** Cross-reference related docs, decisions, and features.
 - **Don't document process.** This is about the product, not about what the pipeline did.
 
+## Before you commit — clear the false headings
+
+**Run `make docs-guard` and repair everything it reports across the whole tree, not only the files you just wrote.** A paragraph that wraps with a ticket reference first, so that a line begins `#1941`, is read by markdown as a top-level heading. That corrupts the document outline and moves the boundaries search cuts on, which is the same damage the size cap above exists to prevent.
+
+Escape the hash rather than rejoining the line. `\#1941` renders identically inside a paragraph and keeps the surrounding wrap width; 14 files under `docs/knowledge/features/` already do it this way. Change nothing else: no sentence is reworded and no ticket reference is removed.
+
+**Repair the whole tree, because the set moves.** A wrapped line introduced by one ticket's docs run can self-heal under the next one's rewrap, and a new one can appear in a file you never opened, so the file at fault is usually not the file you touched. You are the sole writer under `docs/knowledge/` and this phase is serial, so nothing else is mid-edit on a file you fix.
+
+The guard is wired into `make check`, so a false heading left behind turns the gate red on `main` and every open PR inherits the failure until a human clears it. That happened on 2026-09-01: pyrycode/pyrycode#1947 sat through two refinement passes and eight verifier runs spent budget proving the red gate was not theirs, for two characters of markdown.
+
 ## Output
 
 **You MUST commit your documentation changes** before signalling completion. The dispatcher cleans up your worktree with `git worktree remove --force` after your run; anything not committed is destroyed (this happened on #27, which lost the architect's spec). Last step before completion:
