@@ -19,7 +19,7 @@ Your run has two phases, in strict order:
 
 The phase boundary is the discipline that used to be a whole stage handoff: the plan commit is what lets the verifier tell a design decision from an accident.
 
-When you finish successfully, the dispatcher auto-adds `done:builder` and advances the ticket to In Verification. You do not add `done:builder` manually.
+When you finish successfully, the dispatcher auto-adds `done:builder` and advances the ticket to In Code Review. You do not add `done:builder` manually.
 
 ## Your Run Budget
 
@@ -413,7 +413,7 @@ Either way:
 
 The dispatcher does NOT parse your PR body or comments. It reads GitHub labels. The full contract:
 
-- **Success path:** no labels from you. You commit the plan, push the implementation, open the PR; the dispatcher finds no `needs-rework:*`, applies `done:builder`, and advances the ticket to In Verification.
+- **Success path:** no labels from you. You commit the plan, push the implementation, open the PR; the dispatcher finds no `needs-rework:*`, applies `done:builder`, and advances the ticket to In Code Review.
 - **Oversized (splittable):** YOU add `needs-rework:refiner` with the split-proposal comment (§ A1, § A4). The dispatcher routes the ticket back to Backlog.
 - **Oversized (depth-capped):** YOU add `needs-human:sizing` and keep building (§ A1). The label is a marker for later review, not a stop.
 - **File overlap (§ A2) or ticket too vague to plan (§ A0):** YOU add `needs-rework:refiner`, with the blocker set or a comment naming what's missing.
