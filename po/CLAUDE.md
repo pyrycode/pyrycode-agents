@@ -125,7 +125,19 @@ A ticket ships as one `size:s` ticket only if **every** line below holds. Any on
 
 **Every line above is a ceiling, not a shape to fill.** Write the criteria the slice actually needs — one per distinct observable behaviour it adds — and stop. A slice that needs two gets two. Padding to five makes the ticket read bigger than the work without pinning anything more.
 
+**And a floor, which the table above does not have.** A slice whose only deliverable is consumed by exactly one sibling in the same family is not a ticket; it is part of that sibling. A name minted for one caller, a record type only the next slice reads, a helper nobody outside the family calls — those are lines inside a ticket, not tickets. Merge them into the slice that consumes them. The test is whether the slice changes something observable on its own: a behaviour, a contract, a gate that reddens.
+
+This does not conflict with the shared-test-infrastructure split pattern below. That pattern's trigger is reuse by **more than one** ticket. One consumer means one ticket.
+
+Measured 2026-09-01 on the #1925 family: five tickets to commit one captured file, each carrying 4-5 acceptance criteria against a ceiling of 5. The family had spent $213 by mid-morning and projects near $330, for recording the shape of a single tool call.
+
 **This is not tidiness, because the architect sizes from the body you wrote.** A body inflated to the ceiling measures as an oversized ticket, gets split, and each child written back up to the ceiling measures oversized again. Measured 2026-08-24 on the #1714 family: it became #1728/#1729, then #1728 became #1730/#1731, then #1730 became #1732/#1733 — three rounds of splitting in one morning, none prompted by anything learned from writing code, and **each child's body was longer than the parent it was cut from** (3940 chars → 10531 → 18683). All seven tickets carried exactly five acceptance criteria. A limit that binds on every ticket regardless of size is not measuring the ticket; it is being used as a template.
+
+**State your estimate, so the architect checks a number instead of your prose.** End the ticket body with one line:
+
+> Estimate: ~N lines total written work, M production files. Nearest analogue: #XXXX (actual: L lines).
+
+This is what breaks the loop described above. When the architect sizes from prose, a longer and more careful body measures as a bigger ticket, so thoroughness gets punished with a split and each child is written back up to the ceiling. Naming the number means the architect agrees or disagrees with an estimate rather than re-deriving one from how much you wrote.
 
 Count **total written work**, not production lines. Tests are the bulk of it and are not free: each test function is its own edit-and-debug cycle. A ticket you'd call "150 lines of production code" is routinely 400-600 lines of total written work once tests, helper functions, and per-branch log calls land. Three specs on 2026-05-16 sized by production LOC alone and came in at 541, 596, and 1071 actual lines; all three needed salvage.
 
@@ -141,15 +153,50 @@ When you and the architect independently arrive at the same size, that's two che
 
 ## Sizing Test
 
-> "Can you describe this ticket in one sentence without using 'and'?"
+> "Does this ticket have more than one deliverable?"
 
-If not, it's two tickets. This test does the work that file-count was trying to imitate: cross-package work that needs real coordination almost always needs an "and" in its description ("introduce the pool **and** wire the control plane **and** update main.go"). It's the cheapest signal to apply during refinement — reach for it before you start counting lines.
+A deliverable is something that lands and can be checked on its own: a behaviour, a contract, a gate that reddens. Two of them is two tickets. One of them is one ticket, however the title reads.
+
+**The test is about deliverables, not about the word "and".** An earlier version asked whether you could describe the ticket in one sentence without using "and", and it fired on grammar rather than on work. Measured 2026-09-01: #1940, "define the fixture record **and** mint its fixture name", was split on the conjunction alone. Both halves landed in one file, in one commit, proven by one test run. That is one deliverable with a clumsy title — rewrite the title, don't cut the work.
+
+Cross-package work that needs real coordination usually does read as several deliverables, so the signal survives where it was doing useful work. Apply it before you start counting lines.
 
 **If it's bigger than S, split it.** One ticket per concern. The architect will flag oversized tickets back to you with a proposed split, but catching it during refinement is cheaper.
 
 ## Splitting
 
-**Default to split.** A ticket that's "too small" is never a problem — one that's too big wastes $5-10 in burned developer turns. Pyrycode #29 and #40 both exhausted the developer budget ($3.84 and $5.16 respectively) and required JSONL-replay recovery. Both should have been split further.
+**Default to split — and know what each side of that default costs.** Measured across 88 recent tickets on 2026-09-01, priced from the agent session transcripts:
+
+| Outcome | Measured cost |
+|---|---|
+| One ticket, all agents, clean run | ~$32 |
+| One ticket needing a second developer pass | ~$49 median, worst observed $56 |
+| Extra cost of that rework pass | ~$16 |
+| Extra cost of one more split | ~$32 |
+
+An over-split ticket is **not** free. It costs about twice the rework pass it avoids. Earlier versions of this guide said a ticket that's "too small" is never a problem and priced an oversized one at $5-10; the first claim was wrong and the second priced the developer leg only, which is about a fifth of the pipeline.
+
+**What still justifies leaning to split is the parked ticket, not the dollars.** When a developer run exhausts its budget the dispatcher salvages the work into a draft PR, labels the ticket `error:max_turns_salvaged`, and stops. Nothing re-dispatches it. It waits for a human, and that interruption is worth far more than $16. Pyrycode #29 and #40 both exhausted the developer budget ($3.84 and $5.16 respectively) and required JSONL-replay recovery.
+
+**When graceful resumption lands, this default flips.** An exhausted run that simply continues costs the rework pass and nothing else, and at that point bundling is the cheaper choice. Until then lean to split — but inside the floor in the Sizing Guide and the depth cap below, both of which bind regardless.
+
+### Split depth: stop at two
+
+**Before you split, walk the parent chain. A ticket that is already a grandchild does not get split again.**
+
+```bash
+gh api graphql -f query='query($owner:String!,$repo:String!,$num:Int!){repository(owner:$owner,name:$repo){issue(number:$num){number parent{number parent{number}}}}}' \
+  -f owner="$(gh repo view --json owner --jq .owner.login)" \
+  -f repo="$(gh repo view --json name --jq .name)" \
+  -F num=<TICKET> \
+  --jq '.data.repository.issue | "parent \(.parent.number // "none") grandparent \(.parent.parent.number // "none")"'
+```
+
+If `grandparent` comes back as anything other than `none`, **do not split.** Add `needs-human:sizing` to the ticket, comment with the split you would have made and why, and stop. A human decides.
+
+This is a hard gate, not a preference. It exists because every soft rule in this guide failed to stop a recursive split, including the warning two sections up that describes the exact pattern. Measured 2026-09-01: #1925 became #1937, which became #1940, which became #1943 and #1944 — three levels in about seventy minutes, no code written between 03:47 and 05:00, and each child's body longer than the parent it was cut from. The same shape was recorded on the #1714 family on 2026-08-24 and writing it down did not prevent the repeat. A rule that has now failed twice needs a check of a different kind, which is what the query above is.
+
+Depth is measured from the sub-issue chain you already create when splitting. Keep linking each child to its parent via `addSubIssue`, or this gate goes blind.
 
 ### Always-split patterns
 
