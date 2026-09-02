@@ -94,8 +94,8 @@ A ticket ships as one `size:s` ticket only if **every** line below holds. Any on
 
 | Limit | Boundary |
 |---|---|
-| Production source files created or modified | ≤ 3 |
-| Total written work (production + tests + helpers + per-branch log calls + spec-doc edits) | ≤ 400 lines |
+| Production source files created or modified | ≤ 5 |
+| Total written work (production + tests + helpers + per-branch log calls + spec-doc edits) | ≤ 800 lines |
 | New exported types or interfaces | ≤ 5 |
 | Consumer call sites needing simultaneous update | ≤ 10 |
 | Acceptance criteria | ≤ 5 |
@@ -103,7 +103,7 @@ A ticket ships as one `size:s` ticket only if **every** line below holds. Any on
 
 These are quantitative — no judgment call, no "Sized M, no split" escape, no "the parts are coupled" rationalization. **These same six numbers are the ones the refiner applied during refinement, and you re-check them against your written plan before committing it (§ A4).** One boundary, three enforcement points.
 
-**These targets are deliberately tighter than the raw budget.** You have 200 turns and 40 minutes for plan plus implementation; the table is calibrated well inside that because runs still hit the caps at this setting. Do not relax a line by reasoning that you "have plenty of turns" — the observed failures were wall-clock and cascade-shaped, not headroom-shaped.
+**The line and file ceilings were recalibrated to your budget on 2026-09-02.** You have 200 turns and 40 minutes for plan plus implementation. Across your first 21 runs on this repo (2026-09-01 to 02) no run exhausted either: median 60 turns and 14 minutes, heaviest 127 turns (#1826) and 23 minutes (#1825), with the median merged PR adding about 920 lines including spec and docs. 800 lines sits inside a two-times margin of the heaviest run. The old 400-line, 3-file table was set for a 135-turn, 25-minute developer, and under it the first three #1720 children all measured over the line and shipped at a third of your budget. Do not relax a line further by reasoning that you have plenty of turns: the observed failures on the old set were wall-clock and cascade-shaped, and the fan-out check below binds regardless of line count. Since 2026-09-01 a run that exhausts its budget gets one continuation leg before salvage, so a miss costs a leg rather than a parked ticket. The full measurement and the re-measure trigger are in the refiner's Sizing Guide.
 
 **Edit fan-out check (refactor-shaped work).** Line count is a decent proxy for greenfield work but undercounts refactors where you edit many call sites in cascade. Before committing to a size, identify whether the work is refactor-shaped:
 
@@ -137,7 +137,7 @@ The pattern: any rule of shape "fewer than X is OK, more than X requires split" 
 | #445 | S, ~150 LOC production | 596 prod / 2096 total | $6.36 / 71 |
 | #446 | S, ~75-110 LOC | 1071 LOC / 6 files | $6.48 / 71 |
 
-Common shape: the plan counted production LOC, the implementation wrote 3-5× more in tests, 15-30 LOC per helper, and 5-10 LOC per per-reject log call across 10+ state-machine branches. **That is why the table counts total written work and carries a reject-branch line.** All three actuals trip the 400-line boundary; none tripped the production-only rule that preceded it.
+Common shape: the plan counted production LOC, the implementation wrote 3-5× more in tests, 15-30 LOC per helper, and 5-10 LOC per per-reject log call across 10+ state-machine branches. **That is why the table counts total written work and carries a reject-branch line.** All three actuals tripped the 400-line boundary of the time and one trips the current 800; none tripped the production-only rule that preceded it.
 
 **Re-apply the boundary to the refiner's body, not just to your sketch.** The refiner can leak. Count files mentioned across packages, acceptance criteria, distinct deliverables in the user story. If the body itself trips the boundary — even when the refiner labelled it `size:s` — split via `needs-rework:refiner`. The size label is a hypothesis you verify, not a constraint you defer to.
 
@@ -155,7 +155,7 @@ If `grandparent` is anything other than `none`: **do not split, and do not stop 
 
 **Why you continue rather than wait.** Once splitting is off the table there is no "do not build this" outcome — only build it now, or build it after an interruption that ends the same way. Measured on #1938, the first ticket to reach this gate: the run had already found that its own proposed first slice failed the floor rule below; stopping added nothing to that analysis and cost a full extra run at $2.88. The label is a marker so the judgement is findable on the board, not a question someone must answer before the ticket can move. Two things follow. Do not use the label to avoid making the call — state the measurement and your reading of it. And never ask the operator to add a `wip:` label to restart you: that label means this agent is running right now, and it blocks dispatch.
 
-**Also check the floor, not just the ceiling.** A slice whose only deliverable is consumed by exactly one sibling in the same family is part of that sibling, not a ticket of its own. If your proposed split produces a child that nothing outside the family calls, merge it back.
+**Also check the floor, not just the ceiling.** A slice whose only deliverable is consumed by exactly one sibling in the same family is part of that sibling, not a ticket of its own. If your proposed split produces a child that nothing outside the family calls, merge it back. **When the floor and the ceiling disagree, the floor wins:** merge the one-consumer slice back even if the merged ticket exceeds a line of the table, state the overage in your plan, and build. The ceiling protects against a budget miss, which costs one continuation leg. The floor protects against a ticket that cannot be verified on its own, which no resume fixes. Measured on the #1720 split, 2026-09-02: four one-consumer pairs were cut apart to stay under the old ceiling, and ten tickets carried what five would have.
 
 To split, write the split proposal as a comment on the ticket and add `needs-rework:refiner`:
 
