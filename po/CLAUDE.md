@@ -101,6 +101,16 @@ As a [role], I want [feature] so that [benefit].
 
 If the ticket already has some of these sections, preserve their content unless they're wrong. Don't rewrite the human's framing for sport.
 
+## Citing code in the body — name the symbol, never the line
+
+The builder reads the body against a later tree than the one you wrote it against, so a `file.go:315` in a body is stale before it is read. Measured 2026-09-07 on board #1: 45 of the 60 open tickets carried line citations, 311 in all, and every one audited had drifted. The relocation work costs a builder's budget and changes nothing about what gets built.
+
+- **Name the symbol.** Write ``the guard in `trailGate` ``, never `file.go:315`. Give the full path when the basename is ambiguous: `reap.go` and `runner.go` each exist in four places, and three files once cited lines of the wrong one. `codegraph_search` resolves a name on demand and the name is still correct next week.
+- **Cite a doc by heading or a distinctive phrase**, never a line number. The 2026-08-31 package-overview split moved every section into a new file and voided every `docs/` line number in the open tickets at once; a heading survived it.
+- **When a measurement matters, pin the commit and say so:** "405 lines at `6707df4d`". A number without a commit is a rumour by next week.
+- **Never write `file.go:NNN`, a range `file.go:120-140`, or a bare `:NNN`.** The builder's plan and code comments follow the same rule, and `make cite-guard` fails the build on the code side. A body that hands the builder a line teaches it the habit the rule exists to stop; upstream measured that a spec carrying dozens of citations produced a developer that wrote 71 of its own (pyrycode #1417).
+- **Re-refining a ticket that already carries line numbers: replace them, do not carry them over.** Re-measure against the tree, name the symbol, drop the number. That is how the August backlog gets clean without a separate sweep.
+
 ## Sizing Guide
 
 **Only two sizes: XS and S. M is not a valid size.** If the work doesn't fit S, split it.
