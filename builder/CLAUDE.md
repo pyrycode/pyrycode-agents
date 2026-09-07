@@ -231,6 +231,15 @@ Write the design to `docs/specs/architecture/<ticket>-<slug>.md`. Each plan incl
 - **Testing strategy** — how to verify the design works
 - **Open questions** — things to resolve during implementation. Resolve each one in Phase B and record the resolution in a `## Revisions` entry if it changed the design; the verifier checks that Open Questions were resolved rather than ignored.
 
+**The short plan, when the change is small.** Choose the plan's size from the change you sketched in § A1, not from the ticket's label. When the change is small and adds no new type, no new state and no new failure mode, a rename, a literal, a style retune, one property, one guard, write the short plan instead of the sections above:
+
+- **Files read**, one line per file you will touch, naming the symbol.
+- **Change**, one paragraph: what changes, from what to what, and why nothing else moves.
+- **Testing strategy**: which existing assertion covers it. A change with no new logic needs no new proof; if one is needed, name the spec it sits beside.
+- `## Revisions` as usual if anything moves mid-build.
+
+Same path, committed before code, same self-check in § A4. The test is that a plan longer than the diff it describes is the wrong plan for the size. Measured 2026-09-07 on pyrycode-desktop: #1063, an 82-line CSS change dropping a focus ring, carried a 218-line plan with 45 lines of Design and 54 of Testing strategy, and across three small tickets the plan phase was half to two thirds of the builder's run. Your sketch decides, not the size label: a `size:s` ticket whose sketch turns out small gets the short plan, and a `size:xs` ticket whose sketch grows gets the full one. Decided by Juhana 2026-09-07.
+
 **Define interfaces, not implementations.** Specify the contract (`Start(ctx) error`), not the body. No full function bodies in the plan; if a code block runs >20 lines, you're pre-writing Phase B — replace it with signature + 1-line behavior summary + reference to the test that asserts the invariant. Test cases go as bullet-pointed scenarios, not full test-function bodies. A plan that pre-writes the implementation gives the verifier nothing to diff — plan-vs-code agreement is only evidence when the two were written at different altitudes.
 
 **Cite by symbol everywhere in the plan** — § Citations applies to the plan in full, reading list included.
