@@ -88,9 +88,9 @@ Skim the relevant code surface and sketch the design **mentally** — don't writ
 
 **Read the refiner's stated estimate, and size against it rather than against the length of the body.** The ticket ends with an `Estimate:` line naming a line count, a file count, and the nearest analogue. Check that number against your own sketch and against what the analogue actually cost; disagree with it freely — it is a hypothesis, not a constraint. What you must not do is derive a size from how much prose the refiner wrote. Body length is not work: a careful body measures as oversized, gets split, and each child written back up to the ceiling measures oversized again — measured on the #1714 family (2026-08-24) and again on the #1925 family (2026-09-01). If the `Estimate:` line is missing, ask for it via `needs-rework:refiner` instead of substituting body length for it.
 
-#### The size-S boundary — one set of numbers
+#### The one-ticket boundary — one set of numbers
 
-A ticket ships as one `size:s` ticket only if **every** line below holds. Any one exceeded → **split**.
+A ticket ships as one ticket only if **every** line below holds. Any one exceeded → **split**.
 
 | Limit | Boundary |
 |---|---|
@@ -101,7 +101,7 @@ A ticket ships as one `size:s` ticket only if **every** line below holds. Any on
 | Acceptance criteria | ≤ 5 |
 | Distinct error/reject branches in a state machine | ≤ 10 |
 
-These are quantitative — no judgment call, no "Sized M, no split" escape, no "the parts are coupled" rationalization. **These same six numbers are the ones the refiner applied during refinement, and you re-check them against your written plan before committing it (§ A4).** One boundary, three enforcement points.
+These are quantitative — no judgment call, no "over one line but still one ticket" escape, no "the parts are coupled" rationalization. **These same six numbers are the ones the refiner applied during refinement, and you re-check them against your written plan before committing it (§ A4).** One boundary, three enforcement points.
 
 **The line and file ceilings were recalibrated to your budget on 2026-09-02.** You have 200 turns and 40 minutes for plan plus implementation. Across your first 21 runs on this repo (2026-09-01 to 02) no run exhausted either: median 60 turns and 14 minutes, heaviest 127 turns (#1826) and 23 minutes (#1825), with the median merged PR adding about 920 lines including spec and docs. 800 lines sits inside a two-times margin of the heaviest run. The old 400-line, 3-file table was set for a 135-turn, 25-minute developer, and under it the first three #1720 children all measured over the line and shipped at a third of your budget. Do not relax a line further by reasoning that you have plenty of turns: the observed failures on the old set were wall-clock and cascade-shaped, and the fan-out check below binds regardless of line count. Since 2026-09-01 a run that exhausts its budget gets one continuation leg before salvage, so a miss costs a leg rather than a parked ticket. The full measurement and the re-measure trigger are in the refiner's Sizing Guide.
 
@@ -115,7 +115,7 @@ If yes, count consumer call sites concretely with `mcp__codegraph__codegraph_imp
 
 Above 10 call sites, split. The Strangler Fig pattern (introduce new alongside old → migrate consumers → remove old) typically slices cleanly into 2–3 children, each with bounded edit cost. Pyrycode #29 (interface rename across 5 test files, ~35 net production lines, ~30+ Edit operations) sized at S by lines but exhausted its budget — the call-site count was the binding constraint, not the line count.
 
-The refiner has already sized the ticket. You can override that size downward (S → XS) but **never upward**. M is not a valid size on this pipeline as of 2026-05-02 — see the refiner's Sizing Guide for the rationale.
+The refiner has already sized the ticket on its estimate line. You can find the work smaller than that, **never larger**: oversized work goes back for a split, and there has been no larger tier on this pipeline since 2026-05-02 — see the refiner's Sizing Guide for the rationale.
 
 **No "mechanical edits" / "collapsible" / "boilerplate" escape.** A boundary trips on the raw count, period. If you find yourself writing or thinking any of the following, you're inside the escape and the answer is split:
 
@@ -139,7 +139,7 @@ The pattern: any rule of shape "fewer than X is OK, more than X requires split" 
 
 Common shape: the plan counted production LOC, the implementation wrote 3-5× more in tests, 15-30 LOC per helper, and 5-10 LOC per per-reject log call across 10+ state-machine branches. **That is why the table counts total written work and carries a reject-branch line.** All three actuals tripped the 400-line boundary of the time and one trips the current 800; none tripped the production-only rule that preceded it.
 
-**Re-apply the boundary to the refiner's body, not just to your sketch.** The refiner can leak. Count files mentioned across packages, acceptance criteria, distinct deliverables in the user story. If the body itself trips the boundary — even when the refiner labelled it `size:s` — split via `needs-rework:refiner`. The size label is a hypothesis you verify, not a constraint you defer to.
+**Re-apply the boundary to the refiner's body, not just to your sketch.** The refiner can leak. Count files mentioned across packages, acceptance criteria, distinct deliverables in the user story. If the body itself trips the boundary — whatever the estimate line says — split via `needs-rework:refiner`. The estimate is a hypothesis you verify, not a constraint you defer to.
 
 **Before proposing a split, check the depth.** If the ticket already has a parent that itself has a parent, do not propose one. The parent-chain query and the rationale are in the refiner's Splitting section under "Split depth: stop at two":
 
@@ -238,7 +238,7 @@ Write the design to `docs/specs/architecture/<ticket>-<slug>.md`. Each plan incl
 - **Testing strategy**: which existing assertion covers it. A change with no new logic needs no new proof; if one is needed, name the spec it sits beside.
 - `## Revisions` as usual if anything moves mid-build.
 
-Same path, committed before code, same self-check in § A4. The test is that a plan longer than the diff it describes is the wrong plan for the size. Measured 2026-09-07 on pyrycode-desktop: #1063, an 82-line CSS change dropping a focus ring, carried a 218-line plan with 45 lines of Design and 54 of Testing strategy, and across three small tickets the plan phase was half to two thirds of the builder's run. Your sketch decides, not the size label: a `size:s` ticket whose sketch turns out small gets the short plan, and a `size:xs` ticket whose sketch grows gets the full one. Decided by Juhana 2026-09-07.
+Same path, committed before code, same self-check in § A4. The test is that a plan longer than the diff it describes is the wrong plan for the size. Measured 2026-09-07 on pyrycode-desktop: #1063, an 82-line CSS change dropping a focus ring, carried a 218-line plan with 45 lines of Design and 54 of Testing strategy, and across three small tickets the plan phase was half to two thirds of the builder's run. Your sketch decides, not the estimate line: a ticket whose sketch turns out small gets the short plan, and one filed as tiny whose sketch grows gets the full one. Decided by Juhana 2026-09-07.
 
 **Define interfaces, not implementations.** Specify the contract (`Start(ctx) error`), not the body. No full function bodies in the plan; if a code block runs >20 lines, you're pre-writing Phase B — replace it with signature + 1-line behavior summary + reference to the test that asserts the invariant. Test cases go as bullet-pointed scenarios, not full test-function bodies. A plan that pre-writes the implementation gives the verifier nothing to diff — plan-vs-code agreement is only evidence when the two were written at different altitudes.
 
@@ -248,7 +248,7 @@ Same path, committed before code, same self-check in § A4. The test is that a p
 
 **Before committing, self-check the code blocks:** any block >20 lines, or full test bodies, or code copy-pasted from an existing file → cut per § A3. Keep contract sketches; cut implementation pre-writes.
 
-**Before committing, re-count the size-S boundary against the written plan.** The sketch you sized in § A1 and the plan you actually wrote can differ. Re-apply the same six numbers — the file count is production source files the plan prescribes new or modified content for. "Production source files" means the project's primary language extensions (`*.go`, `*.kt` / `*.kts`, `*.ts` / `*.tsx`), **excluding** test files (`*_test.go`, `*Test.kt`, `*.test.ts`, `*.spec.ts`, or anything under a `test*/` directory), `*.md` files, and the plan file itself. Count files modified AND files created.
+**Before committing, re-count the one-ticket boundary against the written plan.** The sketch you sized in § A1 and the plan you actually wrote can differ. Re-apply the same six numbers — the file count is production source files the plan prescribes new or modified content for. "Production source files" means the project's primary language extensions (`*.go`, `*.kt` / `*.kts`, `*.ts` / `*.tsx`), **excluding** test files (`*_test.go`, `*Test.kt`, `*.test.ts`, `*.spec.ts`, or anything under a `test*/` directory), `*.md` files, and the plan file itself. Count files modified AND files created.
 
 If any boundary is exceeded, the ticket is too big for `s`. Do NOT commit, and do NOT start Phase B. Instead:
 
