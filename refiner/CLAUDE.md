@@ -103,6 +103,10 @@ As a [role], I want [feature] so that [benefit].
 
 If the ticket already has some of these sections, preserve their content unless they're wrong. Don't rewrite the human's framing for sport.
 
+**Preserve is not keep-everything.** A body that arrives longer than its change needs is wrong in the way that matters here, because the builder does what the body says: every ordered proof, comment inventory and docs fold is work. When the change is small, the body you write is shorter than the one you read. Cut a new proof ordered for a change that adds no logic, a list of comments the builder can grep in one turn, and any criterion that pins nothing the others do not. Measured 2026-09-07 on pyrycode-desktop: sixty tickets filed by hand in one week ran from 1400 to 15000 characters, and the length tracked how much the filer had read, not the work. #1113, four CSS declarations, arrived at 9700 characters ordering a new proof pair, seven comment rewrites and a docs fold.
+
+**The xs shape.** A ticket you size xs gets the user story; one paragraph of context saying what changes, from what to what, and where, by symbol; one or two criteria; and the estimate line. No Technical Notes. Under 1500 characters, and shorter when the change is smaller. Anything past that on an xs change is the filer's investigation, not the builder's instructions, and belongs in a comment.
+
 **The cold-read test.** Before you finish, re-read the body as if you had never seen this conversation: could an agent with no context beyond the repo build the right thing from these words alone? The builder plans and implements from the body you write — there is no second design stage to fill gaps. If the cold read leaves a "which one?" or "how far?" question open, the body isn't done.
 
 ## Citing code in the body — name the symbol, never the line
@@ -136,6 +140,8 @@ A ticket ships as one `size:s` ticket only if **every** line below holds. Any on
 | Distinct error/reject branches in a state machine | ≤ 10 |
 
 **This is the same table the builder applies**, twice — once against your body before planning, once against its written plan before committing it. Using the same numbers is what makes the three checks reinforce each other instead of bouncing tickets between columns over a disagreement about units.
+
+**A body that arrives with more than five criteria is trimmed before it is sized, never split for its count.** The count is a fact about the write-up. Cut to one criterion per distinct observable behaviour the slice adds, then apply the table to the trimmed body, and split only when the work itself trips a line after the floor. On 2026-09-07 eighteen tickets sat in the two pilot Backlogs at six to nine criteria because the filer had filled them; splitting those would have paid a refiner pass and a builder leg per child for no work gained.
 
 **Every line above is a ceiling, not a shape to fill.** Write the criteria the slice actually needs — one per distinct observable behaviour it adds — and stop. A slice that needs two gets two. Padding to five makes the ticket read bigger than the work without pinning anything more.
 
@@ -228,7 +234,7 @@ These ALWAYS produce ≥2 tickets, no exceptions:
 
 ### When to split
 
-If a ticket combines multiple concerns, the builder proposes a split via `needs-rework:refiner`, OR the body would naturally produce >5 acceptance criteria:
+If a ticket combines multiple concerns, the builder proposes a split via `needs-rework:refiner`, OR the trimmed body still needs more than five acceptance criteria:
 
 1. Use `gh issue create` to create one issue per concern (smaller, sized correctly).
 2. Use `gh project item-add 1 --owner pyrycode --url <new-issue-url>` to add each new issue to the project. Then set status to **Backlog** so they're ready for refinement (not Inbox — they've been triaged, the original was already in Backlog). `gh project item-add` does NOT set Status on its own; without an explicit `gh project item-edit` the item is invisible to every column query.
