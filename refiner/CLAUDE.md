@@ -105,7 +105,7 @@ If the ticket already has some of these sections, preserve their content unless 
 
 **Preserve is not keep-everything.** A body that arrives longer than its change needs is wrong in the way that matters here, because the builder does what the body says: every ordered proof, comment inventory and docs fold is work. When the change is small, the body you write is shorter than the one you read. Cut a new proof ordered for a change that adds no logic, a list of comments the builder can grep in one turn, and any criterion that pins nothing the others do not. Measured 2026-09-07 on pyrycode-desktop: sixty tickets filed by hand in one week ran from 1400 to 15000 characters, and the length tracked how much the filer had read, not the work. #1113, four CSS declarations, arrived at 9700 characters ordering a new proof pair, seven comment rewrites and a docs fold.
 
-**The xs shape.** A ticket you size xs gets the user story; one paragraph of context saying what changes, from what to what, and where, by symbol; one or two criteria; and the estimate line. No Technical Notes. Under 1500 characters, and shorter when the change is smaller. Anything past that on an xs change is the filer's investigation, not the builder's instructions, and belongs in a comment.
+**The xs shape.** A ticket whose change is tiny, under about 30 production lines, gets the user story; one paragraph of context saying what changes, from what to what, and where, by symbol; one or two criteria; and the estimate line. No Technical Notes. Under 1500 characters, and shorter when the change is smaller. Anything past that on an xs change is the filer's investigation, not the builder's instructions, and belongs in a comment.
 
 **The cold-read test.** Before you finish, re-read the body as if you had never seen this conversation: could an agent with no context beyond the repo build the right thing from these words alone? The builder plans and implements from the body you write — there is no second design stage to fill gaps. If the cold read leaves a "which one?" or "how far?" question open, the body isn't done.
 
@@ -121,14 +121,14 @@ The builder reads the body against a later tree than the one you wrote it agains
 
 ## Sizing Guide
 
-**Only two sizes: XS and S. M is not a valid size.** If the work doesn't fit S, split it.
+**One ticket is one slice inside the boundary below, and there is no larger tier.** If the work doesn't fit, split it. Do not apply a size label: as of 2026-09-07 nothing in the pipeline reads one, and 129 of the 134 desktop tickets merged since 2026-09-01 carried the same one. The estimate line is where the size lives.
 
 - **XS** — under 30 lines of production code; trivial change (rename, single-literal edit, formatting).
 - **S** — everything else that fits the boundary below. **The maximum size for any single ticket.**
 
-### The size-S boundary — one set of numbers
+### The one-ticket boundary — one set of numbers
 
-A ticket ships as one `size:s` ticket only if **every** line below holds. Any one exceeded → **split**.
+A ticket ships as one ticket only if **every** line below holds. Any one exceeded → **split**.
 
 | Limit | Boundary |
 |---|---|
@@ -165,11 +165,11 @@ Count **total written work**, not production lines. Tests are the bulk of it and
 
 **The line and file ceilings were recalibrated to the builder's budget on 2026-09-02.** The 400-line, 3-file table was set for the developer at 135 turns and 25 minutes. The builder has 200 turns and 40 minutes for plan plus implementation, and across its first 21 runs on this repo (2026-09-01 to 02) no run exhausted either: the median run used 60 turns and 14 minutes, the heaviest 127 turns (#1826) and 23 minutes (#1825). The median merged PR in that sample added about 920 lines including spec and docs, so most tickets were already landing above the old ceiling and inside a third of the budget. 800 lines sits inside a two-times margin of the heaviest run seen. Line count predicts turns weakly (#1979 landed 964 added lines in 34 turns, #1826 landed 1005 in 127), so the ceiling bounds the tail rather than sizing the typical ticket, and the call-site and reject-branch lines still bind regardless of line count. **Re-measure after ten more builder runs before moving either number again:** read turns and duration from the `USAGE` block at the end of each builder log, and grep the logs for `Resume leg`. A run that exhausts a second leg is the first real evidence for tightening; do not tighten from memory of the old set.
 
-**No `size:m` rationalization escape.** Earlier versions of this guide allowed an M tier with a "Sized M because: <factor>" paragraph. That escape was removed 2026-05-02 after Pyrycode #45 (sized M, 5-file cross-package coordination, 10 AC) exhausted the implementation budget and required recovery. The six-agent relay's design stage carried an identical "Why M, not split" escape and it went the same way — both were rationalization paths that consistently produced budget-exhaustion failures.
+**No larger-tier rationalization escape.** Earlier versions of this guide allowed an M tier with a "Sized M because: <factor>" paragraph. That escape was removed 2026-05-02 after Pyrycode #45 (sized M, 5-file cross-package coordination, 10 AC) exhausted the implementation budget and required recovery. The six-agent relay's design stage carried an identical "Why M, not split" escape and it went the same way — both were rationalization paths that consistently produced budget-exhaustion failures.
 
 These boundaries are mechanical. If the ticket trips one after the floor has been applied, you split — you do not size it S "because the parts are coupled" or "because the seams aren't obvious." Couple-sounding work splits cleanly more often than not; the builder's plan on each child surfaces seams the parent body couldn't.
 
-**The builder can override your size downward (S → XS) but cannot bump up.** M is not on the builder's lattice either. If the builder identifies oversized work, it routes back via `needs-rework:refiner` with a split proposal — never bump to M.
+**The builder can find the work smaller than your estimate, but cannot grow the ticket.** If the builder identifies oversized work, it routes back via `needs-rework:refiner` with a split proposal — never by absorbing it.
 
 When you and the builder independently arrive at the same size, that's two checks and a stronger signal. When you disagree, the builder's view wins because it has sketched the actual design surface.
 
@@ -336,7 +336,7 @@ If a ticket was routed back to you (`needs-rework:refiner` from the builder):
 
 ## Output
 
-- For pure refinement: edit the existing issue body via `gh issue edit <number> --body "..."` and apply the size label via `gh issue edit <number> --add-label size:xs` (or `size:s`). **Do not apply `size:m` — it is not a valid size. If the work would be M, split.**
+- For pure refinement: edit the existing issue body via `gh issue edit <number> --body "..."`. Do not apply a size label; the estimate line carries the size. **If the work does not fit the boundary, split.**
 - For splits: see § Splitting.
 - For demotion: see § Demoting Back to Inbox.
 
