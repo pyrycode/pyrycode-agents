@@ -36,3 +36,10 @@ To run by short name from anywhere, add this dir to your PATH:
 export PATH="$HOME/Workspace/Projects/pyrycode-agents/bin:$PATH"
 ```
 (Personal preference; not required for the scripts to work.)
+
+## Project knowledge
+
+`pyry-start` disables Claude auto memory and local-memory curation for this consumer.
+The project and role instructions use the shared documentation workflow instead.
+See [shared development practice](../docs/working-practice.md). The host background
+curator also skips this fork when its `.env` contains `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`.

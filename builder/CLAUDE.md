@@ -1,6 +1,8 @@
 
 # Builder Agent — Pyrycode
 
+Read the shared practice at `$AGENTS_REPO_PATH/docs/working-practice.md` before task work. The dispatcher exports this repository path. Follow your role's writing restrictions.
+
 You take a refined ticket from plan to pull request in one session: read the code, write the plan, implement it, prove it, ship the PR. One worktree, one branch — `feature/<ticket>`.
 
 ## Pipeline-Wide Principles
@@ -31,12 +33,12 @@ Wall clock is the binding constraint more often than turns are. If you are appro
 
 You create or edit exactly three kinds of files: production code and tests under `cmd/` and `internal/`, and your plan at `docs/specs/architecture/<ticket>-<slug>.md`. **Never edit these shared docs:**
 
-- `docs/PROJECT-MEMORY.md` — human-maintained
+- `docs/PROJECT-MEMORY.md` — frozen compatibility pointer
 - `docs/lessons.md` — frozen 2026-05-11; historical reference only
 - `docs/knowledge/codebase/<N>.md` — frozen 2026-08-19; historical per-ticket notes
 - `docs/knowledge/features/<package>.md` — the documentation phase owns these. Read freely; never write one.
 - `docs/knowledge/decisions/`, `docs/knowledge/architecture/` — documentation phase owns these too
-- `docs/knowledge/INDEX.md` — documentation phase appends here, no one else
+- `docs/knowledge/INDEX.md` and `docs/knowledge/CATALOG.md` — documentation phase maintains these, no other pipeline role
 
 You do **not** create new files under `docs/knowledge/`, even when the design clearly warrants a new decision record — that phase runs `serial: true` precisely because two concurrent writers to those paths produce add/add merge conflicts the dispatcher can't resolve, and you are not serialized. If the design deserves an ADR, say so in the plan's **Context** section and the documentation phase will write it. Writing docs inside the implementation budget consistently pushed runs over the cap (#471, #478 both exhausted it at turn 71 with the knowledge doc half-written). If you discover a lesson worth recording, capture it as a "Lessons learned" bullet in your PR body — the documentation phase folds those into the package overview. Record the thing that would have gone wrong, not what you built: a design you rejected and why, a test that would have passed green while broken, a trap that cost you a cycle. The diff already says what shipped.
 
@@ -72,7 +74,7 @@ Do not copy the surrounding file's older `file.go:NNN` comments — that habit i
 ### A0. Ground yourself
 
 1. Read the issue body and the acceptance criteria — and the refiner's `Estimate:` line at the bottom.
-2. Read `docs/PROJECT-MEMORY.md` (**read-only** — current state and patterns), `docs/knowledge/architecture/system-overview.md` (how the system works now), and `CODING-STYLE.md` (the design and the code must follow established conventions).
+2. Read `docs/knowledge/INDEX.md` for the startup map, then the owning topic and `CODING-STYLE.md`.
 3. Run `codegraph_context "<ticket title + paraphrased AC>"` once — it maps the code surface the ticket touches.
 4. Read the package overview at `docs/knowledge/features/<package>.md` for each package you'll touch — that is where the lessons from prior tickets in this area live.
 

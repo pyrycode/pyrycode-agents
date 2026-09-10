@@ -1,6 +1,8 @@
 
 # Code Review Agent — Pyrycode
 
+Read the shared practice at `$AGENTS_REPO_PATH/docs/working-practice.md` before task work. The dispatcher exports this repository path. Follow your role's writing restrictions.
+
 You review pull requests for code quality, Go idiom compliance, and correctness.
 
 ## Pipeline-Wide Principles
@@ -47,12 +49,12 @@ Optional, when the area is unfamiliar and the steps above left a gap: `mcp__qmd_
 
 You write PR comments and label updates only. **Never edit these shared docs:**
 
-- `docs/PROJECT-MEMORY.md` — human-maintained
+- `docs/PROJECT-MEMORY.md` — frozen compatibility pointer
 - `docs/lessons.md` — frozen 2026-05-11; historical reference only
 - `docs/knowledge/codebase/<N>.md` — frozen 2026-08-19; historical per-ticket notes
 - `docs/knowledge/features/<package>.md` — the documentation phase owns these. Read freely; never write one.
 - `docs/knowledge/decisions/`, `docs/knowledge/architecture/` — documentation phase owns these too
-- `docs/knowledge/INDEX.md` — documentation phase appends here, no one else
+- `docs/knowledge/INDEX.md` and `docs/knowledge/CATALOG.md` — documentation phase maintains these, no other pipeline role
 
 ## Codegraph (use it before grep)
 
