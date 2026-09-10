@@ -11,7 +11,7 @@ so the dispatcher knows where the consumer's per-agent CLAUDE.md files,
 
 | Script | Purpose |
 |---|---|
-| `pyry-start` | Start the dispatcher in the foreground. Pass-through args to `pnpm`. |
+| `pyry-start` | Start the dispatcher in the foreground. Select with `--runner claude|codex`; pass remaining arguments to the dispatcher. |
 | `pyry-drain` | Send SIGTERM — dispatcher finishes the current dispatch, then exits cleanly. |
 | `pyry-status` | Report whether the dispatcher is running, on which Node binary, and since when. Exit 0 = running, 1 = stopped. |
 | `pyry-restart` | Drain → wait for in-flight dispatch to finish (30 min cap) → start fresh. |
@@ -46,11 +46,24 @@ curator also skips this fork when its `.env` contains `CLAUDE_CODE_DISABLE_AUTO_
 
 ## Agent runner
 
-Claude remains the default. To use the Codex runner, set
-`PYRY_AGENT_RUNNER=codex` in this repository's `.env` before starting the dispatcher.
-Unset it or use `claude` to switch back. Codex must be installed and authenticated
-on this host. It uses its configured default model and effort unless
-`PYRY_CODEX_MODEL` or `PYRY_CODEX_EFFORT` is set.
+Select the runner for one launch:
+
+```sh
+./bin/pyry-start --runner codex
+./bin/pyry-start --runner claude
+```
+
+The option overrides `PYRY_AGENT_RUNNER` from the environment or `.env` for that
+launch without changing the saved setting. `--runner=codex` is also accepted.
+Put launcher options before any dispatcher command. With no option, the existing
+saved setting applies; if none is set, Claude remains the default. Use `--help`
+for usage. Invalid or missing runner values fail before startup.
+
+Codex must be installed and authenticated on this host. It uses its configured
+default model and effort unless `PYRY_CODEX_MODEL` or `PYRY_CODEX_EFFORT` is set.
+
+Run `python3 bin/pyry-start.test.py` to verify option parsing and precedence with
+mocked dependencies. The tests never start a live dispatcher.
 
 Codex uses workspace sandboxing with automatic approval review. A blocked task
 parks without automatic retry and keeps its worktree. It uses the role's wall-clock
