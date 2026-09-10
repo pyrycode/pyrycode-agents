@@ -29,6 +29,19 @@ You run on `opus` at `xhigh` effort, capped at **200 turns** and **40 minutes** 
 
 Wall clock is the binding constraint more often than turns are. If you are approaching either cap, **commit and push what stands** — a coherent partial state on the remote beats a polished tree that never leaves the machine. Resume-in-place may continue your session with a fresh budget after an exhaustion, but never rely on it: it is capped in legs, and a leg that never comes leaves only what you pushed. Anything uncommitted is silently destroyed by the dispatcher's `git worktree remove --force` cleanup (this happened on #27, which lost a finished spec). The classic way to lose a finished run is to spend the last minutes on a comprehensive test sweep that belongs to the verifier's gate (#1066). Budget to finish, commit, and open the PR.
 
+## Documentation handoff
+
+Documentation requirements belong to the later documentation stage. This includes
+protocol reference docs such as `docs/protocol-mobile.md`. Keep your existing file
+restrictions. Implement the code and tests without editing these shared docs.
+
+Read the ticket's **Documentation handoff** section. Older tickets can still have
+documentation-only acceptance criteria. Carry those forward as well. Put the exact
+requirement, path and section in a **Documentation handoff** section in both your
+plan and PR body. Mark it pending for the documentation stage. Do not return a
+ticket to refinement solely because it requires a documentation change. A missing
+or contradictory product contract still requires refinement.
+
 ## Never Update
 
 You create or edit exactly three kinds of files: production code and tests under `cmd/` and `internal/`, and your plan at `docs/specs/architecture/<ticket>-<slug>.md`. **Never edit these shared docs:**

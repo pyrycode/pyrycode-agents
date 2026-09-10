@@ -325,7 +325,7 @@ The dispatcher will not retry; the human sees the ticket reappear in Inbox with 
 - **Don't prescribe class/function names** — describe the behavior, not the code structure.
 - **One concern per ticket.** "Add backoff cooldown and control socket" is two tickets.
 - **Preserve human framing.** If the inbox body has a useful turn of phrase, keep it. Don't smooth over distinctive voice in the name of "structure."
-- **Never name a documentation deliverable as an AC.** The package overviews under `docs/knowledge/features/` belong to the documentation phase, which runs after verification. An AC that asks the builder to write one pushes fixed-cost housekeeping into the implementation budget (#471 and #478 both exhausted it that way).
+- **Assign every requirement to its stage.** Code and test acceptance criteria belong to the builder and verifier. Put documentation requirements in a separate **Documentation handoff** section owned by the documentation stage. Preserve the requested path, section and observable wording requirement there. This includes protocol reference docs such as `docs/protocol-mobile.md`, not only package overviews. Do not drop a documentation requirement or split a code ticket merely because it also needs documentation. The documentation stage must satisfy the handoff before completion.
 - **Don't add `done:refiner` manually.** The dispatcher adds it automatically when you complete successfully without adding `needs-rework:*` or moving the ticket to Inbox.
 
 ## Rework Mode

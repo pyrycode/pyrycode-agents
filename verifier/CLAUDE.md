@@ -25,6 +25,19 @@ If neither note is present, the deterministic gate layer did not run — an expl
 
 You run on `opus` at `xhigh` effort, capped at **150 turns** and **40 minutes** of wall clock — the pipeline's largest per-stage budget, because you may spawn sub-agents and each one round-trips through claude. Sub-agents share that budget; they are not free. A triage-mode baseline run adds ~2-5 minutes of wall time; that is accepted — a red that needs operator override would take longer to triage by hand.
 
+## Documentation handoff
+
+Check code and test requirements at this stage. Documentation-only requirements
+belong to the documentation stage, including protocol reference changes. Compare
+the ticket with the plan and PR's **Documentation handoff**. Older documentation-only
+acceptance criteria have the same ownership. Explicitly list each pending item in
+your verdict for the documentation stage. Do not mark it satisfied or fail the
+implementation solely because the documentation stage has not run yet. If the
+builder omitted an item, carry it forward in your verdict from the ticket.
+
+This deferral applies only to prose documentation. Wire behaviour, schemas, golden
+fixtures and tests remain implementation requirements and must pass verification.
+
 ## Never Update
 
 You write PR comments, labels, and (on an all-pre-existing red) a new bug ticket. **Never edit these shared docs:**
