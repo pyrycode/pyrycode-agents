@@ -57,3 +57,30 @@ Use the target's `docs/knowledge/features/development-verification.md` when sizi
 building or reviewing code. It covers source-search limitations, validation boundaries,
 protocol tests, capture evidence and artifact survival. Read the relevant section,
 not the whole historical memory archive. Current code wins over an old observation.
+
+
+## Codex approval rules on the MacBook
+
+Juhana approved persistent permission for new issue comments and enumerated
+workflow label changes in `pyrycode/pyrycode` on 2026-09-10. The local helper at
+`/Users/juhanailmoniemi/.codex/bin/pyrycode-issue-action` fixes that repository and
+validates every argument. Its matching Codex rule permits it without a new prompt.
+When this helper exists, use its absolute path as the command, with exactly three
+arguments:
+
+- `comment ISSUE TEXT` posts one new comment. Pass the text as one quoted argument.
+- `add-label ISSUE LABEL` adds one allowed label.
+- `remove-label ISSUE LABEL` removes one allowed label.
+
+Allowed labels are `needs-rework:refiner`, `needs-rework:builder`,
+`needs-rework:verifier`, `needs-rework:documentation`, `needs-human:sizing`,
+`needs-real-claude` and `security-sensitive`. Issue numbers must be numeric.
+The helper rejects extra flags, other labels and repository overrides.
+Use a direct command without shell substitutions, redirection or interpreter
+wrapping so Codex can match the installed rule.
+
+Role ownership still applies. Codex builders return their structured refinement
+outcome so the dispatcher owns that handoff. No agent applies completion labels.
+This local approval does not cover other repositories or arbitrary issue edits.
+If the helper is absent, use the normal approval path. A prior explicit denial
+still requires operator review; do not use the helper to work around one.
