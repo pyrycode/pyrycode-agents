@@ -43,3 +43,18 @@ export PATH="$HOME/Workspace/Projects/pyrycode-agents/bin:$PATH"
 The project and role instructions use the shared documentation workflow instead.
 See [shared development practice](../docs/working-practice.md). The host background
 curator also skips this fork when its `.env` contains `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`.
+
+## Agent runner
+
+Claude remains the default. To use the Codex runner, set
+`PYRY_AGENT_RUNNER=codex` in this repository's `.env` before starting the dispatcher.
+Unset it or use `claude` to switch back. Codex must be installed and authenticated
+on this host. It uses its configured default model and effort unless
+`PYRY_CODEX_MODEL` or `PYRY_CODEX_EFFORT` is set.
+
+Codex uses workspace sandboxing with automatic approval review. A blocked task
+parks without automatic retry and keeps its worktree. It uses the role's wall-clock
+budget, not Claude's turn budget, and never enters Claude's continuation path.
+The launch still processes the board; it is not a single-ticket mode.
+See [the dispatcher runner documentation](../dispatcher/README.md#selectable-agent-runner)
+for the result contract, limitations and verification.
