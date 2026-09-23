@@ -23,7 +23,7 @@ Every dispatcher, agent and interactive session shares one GitHub account and it
 
 Your run has two phases, in strict order:
 
-- **Phase A — plan.** Size-check the ticket, check for in-flight overlaps, research the code surface, write the design to `docs/specs/architecture/<ticket>-<slug>.md`, and **commit it before writing any implementation code**. The committed plan is the audit artifact the verifier diffs the implementation against.
+- **Phase A — plan.** Size-check the ticket, check in-flight branches for real dependencies, research the code surface, write the design to `docs/specs/architecture/<ticket>-<slug>.md`, and **commit it before writing any implementation code**. The committed plan is the audit artifact the verifier diffs the implementation against.
 - **Phase B — implement.** Failing test first, then code, then touched-scope verification, then commit, push, and open the PR linking the ticket.
 
 The phase boundary is the discipline that used to be a whole stage handoff: the plan commit is what lets the verifier tell a design decision from an accident.
@@ -189,9 +189,9 @@ To split, write the split proposal as a comment on the ticket and add `needs-rew
 
 Then stop. Don't write a plan for the parent — it would be thrown away. **And do not Write any files when splitting:** the proposal goes in the GitHub issue comment, not as a file on disk, and your worktree should be untouched at the end of a split run. The dispatcher's safety-net auto-commit fires on any dirty worktree — scratch notes or draft files written during sketching get committed to `feature/<ticket>` and pushed to origin, leaving stale junk on the branch.
 
-### A2. File-overlap check (always, even on size-S tickets)
+### A2. In-flight dependency check (always, even on size-S tickets)
 
-After the size check passes, identify which files your design will touch, then check whether any other in-flight feature branch also touches them. **Overlapping changes to the same file produce merge conflicts at integration time.** Whether this can happen depends on `PYRY_MAX_CONCURRENT` (code default 2; check the dispatcher's startup log line `Concurrency cap: N`) — at any cap above 1, sibling builder runs may push to sibling branches while yours is in flight. **Run the check regardless**: it costs one `git fetch` and a loop, and at cap 1 it correctly finds nothing.
+After the size check passes, identify which files your design will touch, then list the other in-flight feature branches that also touch them. The list tells you where to look. **A shared file on its own is not a reason to wait.** Run the check at any concurrency cap: it costs one `git fetch` and a loop, and when nothing else is in flight it correctly finds nothing.
 
 ```bash
 # Files your design will touch (from the sketch — you have these in your head)
@@ -203,7 +203,7 @@ FILES=("internal/sessions/pool.go" "internal/sessions/pool_test.go" "cmd/pyry/ma
 git fetch origin --prune --quiet
 
 # For each remote feature branch (not just those backed by an open PR), list
-# files it touches relative to main; flag overlaps.
+# files it touches relative to main; list overlaps.
 for branch in $(git branch -r | grep -E 'origin/feature/[0-9]+$' | tr -d ' '); do
   branch_files=$(git diff --name-only "origin/main...${branch}" 2>/dev/null || true)
   for f in "${FILES[@]}"; do
@@ -219,24 +219,35 @@ done
 
 **Why branch-based instead of PR-based.** An earlier version used `gh pr list --state open`. Above cap 1, two builder runs can be in flight in parallel; neither has produced a PR yet, so `gh pr list` is blind to the sibling. `git branch -r` sees the branch the moment it's pushed, regardless of whether a PR has been opened. Strict superset of the old check — PRs are just branches with a wrapper.
 
-**If any overlap is found:**
+**Sharing a file is normal. Build through it.** The dispatcher merges main into your branch before every stage. If that merge conflicts, it settles import-only conflicts itself and hands anything else to the builder to finish first, then checks that no line main added was lost. So when the other ticket lands first, the collision costs one short merge later. Waiting costs a whole ticket's cycle now, for every ticket that shares a busy file.
 
-1. For each conflicting issue, set `addBlockedBy(<this-ticket>, <conflicting-issue>)` via:
+**Wait only on a real dependency.** For each overlapping branch, read its change to the shared files with `git diff origin/main...origin/feature/<N> -- <file>`. Wait only if one of these holds:
+
+1. **Your design needs what it adds.** A type, function, field, screen or endpoint your change calls or extends exists only on that branch.
+2. **Both rewrite the same block.** Both designs restructure the same function or branch of logic, so whichever lands second would have to redesign, not just re-merge. Examples: both restructure the same state machine in `internal/sessions`, or both change the signature and every caller of the same function.
+
+These are not dependencies, so build: adding entries next to the other ticket's entries in a shared list, resource file, route table, wiring module or test file; adding a new function to a file it also edits; changing different functions in the same file.
+
+**When you build through an overlap,** keep your edits to the shared files additive and local. Append rather than reorder, and do not reformat lines you did not need to change. Name the overlapping tickets in one line of the plan, so the verifier knows a later merge may touch those files.
+
+**If a real dependency is found:**
+
+1. For each ticket you depend on, set `addBlockedBy(<this-ticket>, <that-issue>)` via:
    ```bash
    gh api graphql -f query='mutation($issueId: ID!, $blockingIssueId: ID!) {
      addBlockedBy(input: { issueId: $issueId, blockingIssueId: $blockingIssueId }) {
        issue { number }
      }
    }' -f issueId="$(gh issue view <THIS> --json id -q '.id')" \
-      -f blockingIssueId="$(gh issue view <CONFLICTING> --json id -q '.id')"
+      -f blockingIssueId="$(gh issue view <THAT> --json id -q '.id')"
    ```
-2. Post a comment on this ticket: *"Blocked by #N: overlapping changes to <file>. Will build once #N lands."*
+2. Post a comment on this ticket naming the dependency: *"Blocked by #N: this design needs <what #N adds> / rewrites <the same block> as #N. Will build once #N lands."*
 3. Add `needs-rework:refiner`. **Do NOT write the plan.** Your worktree should be untouched.
 4. Stop.
 
 Because the ticket now has an open blocker, the dispatcher treats this as a wait, not a rework: it strips the label, leaves the ticket in In Development, and counts no rework. When the blocker closes, `blockedBy` flips to CLOSED and you re-run directly, with the now-merged code on main as your starting point. The refiner is not involved, so put any design notes the next run needs in the blocker comment.
 
-**Why this matters:** Pyrycode #40 hit this exact failure — no logical dependency on #38 or #39, but all three modified `internal/sessions/pool_test.go`; #38 + #39 merged while #40 was being recovered, the merge conflicted, ~30 min of manual resolution. The 2026-05-08 #182/#187 incident proved the same point at cap 2 — sibling `internal/update` tickets collided at merge time because the old PR-based check couldn't see in-flight work.
+**History.** Pyrycode #40 collided with #38 and #39 on `internal/sessions/pool_test.go` with no logical dependency, and the merge took about 30 minutes by hand. The 2026-05-08 #182/#187 incident repeated it at cap 2 on `internal/update`. That is why any shared file used to be a stop. Since 2026-09-23 the dispatcher's merge before every stage, and its handoff of conflicts to the builder, catch the collision those incidents describe, so only a real dependency waits.
 
 ### A3. Write the plan
 
@@ -453,7 +464,7 @@ The dispatcher does NOT parse your PR body or comments. It reads GitHub labels. 
 - **Success path:** no labels from you. You commit the plan, push the implementation, open the PR; the dispatcher finds no `needs-rework:*`, applies `done:builder`, and advances the ticket to In Code Review.
 - **Oversized (splittable):** YOU add `needs-rework:refiner` with the split-proposal comment (§ A1, § A4). The dispatcher routes the ticket back to Backlog.
 - **Oversized (depth-capped):** YOU add `needs-human:sizing` and keep building (§ A1). The label is a marker for later review, not a stop.
-- **File overlap (§ A2) or ticket too vague to plan (§ A0):** YOU add `needs-rework:refiner`, with the blocker set or a comment naming what's missing.
+- **A real dependency on an in-flight ticket (§ A2) or ticket too vague to plan (§ A0):** YOU add `needs-rework:refiner`, with the blocker set or a comment naming what's missing.
 
 You never apply a `done:*` label by hand on any path. The dispatcher owns those.
 
