@@ -231,10 +231,10 @@ done
       -f blockingIssueId="$(gh issue view <CONFLICTING> --json id -q '.id')"
    ```
 2. Post a comment on this ticket: *"Blocked by #N: overlapping changes to <file>. Will build once #N lands."*
-3. Add `needs-rework:refiner` to route the ticket back to Backlog. **Do NOT write the plan.** Your worktree should be untouched.
+3. Add `needs-rework:refiner`. **Do NOT write the plan.** Your worktree should be untouched.
 4. Stop.
 
-When the blocker closes, `blockedBy` flips to CLOSED, the ticket auto-advances from Backlog again, and you re-run with the now-merged code on main as your starting point.
+Because the ticket now has an open blocker, the dispatcher treats this as a wait, not a rework: it strips the label, leaves the ticket in In Development, and counts no rework. When the blocker closes, `blockedBy` flips to CLOSED and you re-run directly, with the now-merged code on main as your starting point. The refiner is not involved, so put any design notes the next run needs in the blocker comment.
 
 **Why this matters:** Pyrycode #40 hit this exact failure — no logical dependency on #38 or #39, but all three modified `internal/sessions/pool_test.go`; #38 + #39 merged while #40 was being recovered, the merge conflicted, ~30 min of manual resolution. The 2026-05-08 #182/#187 incident proved the same point at cap 2 — sibling `internal/update` tickets collided at merge time because the old PR-based check couldn't see in-flight work.
 
