@@ -341,8 +341,8 @@ The dispatcher will not retry; the human sees the ticket reappear in Inbox with 
 
 If a ticket was routed back to you (`needs-rework:refiner` from the builder):
 
-1. Read the issue comments to understand why. The builder's split proposals arrive this way, as does "acceptance criteria too vague to plan against" and "blocked on an overlapping in-flight branch."
-2. Common reasons: ticket too large (split it per § Splitting), unclear acceptance criteria (rewrite), missing context (add it), file overlap with an in-flight branch (the builder has already set the blocker; leave the body alone unless it also needs work — the ticket re-advances when the blocker closes).
+1. Read the issue comments to understand why. The builder's split proposals arrive this way, as does "acceptance criteria too vague to plan against." A file-overlap bail does not: the builder sets an open blocker, and the dispatcher keeps that ticket in In Development as a wait until the blocker closes.
+2. Common reasons: ticket too large (split it per § Splitting), unclear acceptance criteria (rewrite), missing context (add it).
 3. After fixing, the dispatcher auto-adds `done:refiner` again — you don't add it manually.
 
 ## Output
