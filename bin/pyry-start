@@ -43,6 +43,13 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
+# Use only the dedicated Automation service account, never a desktop login.
+AUTOMATION_ACCESS="${PYRY_AUTOMATION_ACCESS:-$HOME/.local/bin/automation-access}"
+if [ ! -x "$AUTOMATION_ACCESS" ]; then
+  echo "error: service-account helper missing at $AUTOMATION_ACCESS" >&2
+  exit 1
+fi
+
 if [ ! -d "$AGENTS_DIR/dispatcher" ]; then
   echo "error: dispatcher submodule missing at $AGENTS_DIR/dispatcher" >&2
   echo "       run: cd $AGENTS_DIR && git submodule update --init" >&2
@@ -170,8 +177,8 @@ trap "rm -f '$LOCK_FILE'" EXIT
 # process between `op run` and node.
 # Apply the explicit runner inside the existing exec wrapper, after op has
 # loaded .env. No extra process or shell quoting layer is introduced.
-op run --env-file="$AGENTS_DIR/.env" -- \
-  /usr/bin/perl -e 'my $runner = shift @ARGV; $ENV{PYRY_AGENT_RUNNER} = $runner if length $runner; setpgrp(0, 0) or die "setpgrp: $!\n"; open(STDIN, "<", "/dev/null"); exec @ARGV or die "exec: $!\n";' -- \
+"$AUTOMATION_ACCESS" op run --env-file="$AGENTS_DIR/.env" -- \
+  /usr/bin/perl -e 'delete $ENV{OP_SERVICE_ACCOUNT_TOKEN}; my $runner = shift @ARGV; $ENV{PYRY_AGENT_RUNNER} = $runner if length $runner; setpgrp(0, 0) or die "setpgrp: $!\n"; open(STDIN, "<", "/dev/null"); exec @ARGV or die "exec: $!\n";' -- \
   "$RUNNER_OVERRIDE" "$NODE_BIN" --import tsx src/dispatch-bin.ts "$@" &
 LAUNCH_PID=$!
 
@@ -194,6 +201,12 @@ while [ $i -lt 50 ]; do
     fi
   done
   [ -n "$DISPATCHER_PID" ] && break
+  # Preserve authentication failures before a dispatcher exists.
+  if ! kill -0 "$LAUNCH_PID" 2>/dev/null; then
+    STATUS=0
+    wait "$LAUNCH_PID" || STATUS=$?
+    exit "$STATUS"
+  fi
   sleep 0.1
   i=$((i + 1))
 done
