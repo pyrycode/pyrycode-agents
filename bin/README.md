@@ -59,8 +59,9 @@ Put launcher options before any dispatcher command. With no option, the existing
 saved setting applies; if none is set, Claude remains the default. Use `--help`
 for usage. Invalid or missing runner values fail before startup.
 
-Codex must be installed and authenticated on this host. It uses its configured
-default model and effort unless `PYRY_CODEX_MODEL` or `PYRY_CODEX_EFFORT` is set.
+Codex must be installed and authenticated on this host. The dispatcher uses
+`gpt-6-sol` by default and inherits the configured effort. Set `PYRY_CODEX_MODEL`
+or `PYRY_CODEX_EFFORT` to override either choice.
 
 Run `python3 bin/pyry-start.test.py` to verify option parsing and precedence with
 mocked dependencies. The tests never start a live dispatcher.
