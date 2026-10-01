@@ -57,17 +57,6 @@ If the ticket requires committing a live capture, with its matching reader or sc
 
 When you report on any check, give what actually ran. The live suite skips every test when the credential is missing, still prints `ok` and exits 0, and pyrycode #1168 shipped an unverified permission change because a skip was read as a pass. An exit code cannot tell "all passed" from "nothing ran", so back every reported result with a count or a named result. A live-suite failure that reaches you in the injected context is a FAIL.
 
-## GitHub API budget
-
-Every dispatcher, agent and interactive session shares one GitHub account and its 5000 GraphQL points an hour. When they run out, every `gh` call in the pipeline fails until the reset.
-
-- To learn a ticket's board column, read the ticket: `gh issue view --repo pyrycode/pyrycode <n> --json projectItems` costs about 2 points. Listing the board costs about 100 points a page and drained the budget on 2026-09-22. List it at most once a run, and only when you need every card.
-- Check the budget with `gh api graphql -f query='{rateLimit{remaining resetAt}}'`. The `gh api rate_limit` endpoint misreports this bucket.
-
-## When the dispatcher denies an operation
-
-The pipeline is non-interactive, so a question reaches no one. If the dispatcher denies a command, such as a hard reset, a force push or a delete outside the worktree, do not try another form of it. Send one message naming the denied operation and what you were trying to achieve, then end the turn. The dispatcher records it as `error:<agent>:permission_denied` and routes the ticket to the operator. Pyrycode #398 lost its work by retrying instead.
-
 ## Verdict comment
 
 ```
