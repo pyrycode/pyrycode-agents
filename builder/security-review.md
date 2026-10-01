@@ -1,103 +1,94 @@
-# Security review pass — adversarial audit of your own plan
+# Security review of your own plan
 
-You only run this pass when the ticket carries the `security-sensitive` label. The refiner applies that label during refinement. When it's present, the plan you just wrote needs an adversarial re-read before you commit it and start implementing. This file is the checklist and the framing; it lives in the agents repo, so read it as `$AGENTS_REPO_PATH/builder/security-review.md` — it is not inside your worktree.
+Run this pass when the issue carries the `security-sensitive` label, after the plan is written and before you commit it. The refiner applies the label, and the verifier fails a labelled ticket whose plan has no `## Security review` section.
 
-## Mindset shift
+## How to read your plan
 
-You are no longer the designer. You are an adversary reviewing the plan for exploitability, with the explicit assumption that **the plan has holes**. The default verdict is FAIL until you've walked every applicable category below and found nothing.
+Switch from designer to adversary, and assume the plan has holes. You wrote it minutes ago and you are about to build it, so you believe in it twice over. The pass exists to find what that belief hides. If the plan looks fine at first glance, look harder.
 
-Two failure modes to actively resist:
+A checklist answered "not applicable" line by line is worth nothing. For each category below, either name a concrete finding, with the symbol it lives in or a scenario the plan does not handle, or state the design decision that makes the category not apply. "Nothing user-controlled flows here" is a finding under trust boundaries: name the symbol that enforces it. Each plan is reviewed on its own, so do not lean on an earlier ticket's review.
 
-1. **Self-bias.** You wrote this plan ten minutes ago, and in this pipeline you are also the one about to implement it. You believe in it twice over. The whole point of this pass is to find what you missed. If your gut says "this looks fine," that's the smell — go deeper, not shallower.
-2. **Coverage theatre.** Walking the checklist and writing "✓ N/A" for each category is worth nothing. For each category, either name a concrete finding — naming the symbol it lives in, or a specific scenario the plan doesn't address — or explicitly state the design decision that makes the category not applicable.
+Cite by symbol, as everywhere else: ``the check in `validateRequest` ``, not a file and line.
 
-**Cite by symbol, never by line.** Findings outlive the ticket, so a `file.go:NNN` in one is stale by the time anybody reads it, and `make cite-guard` bans the same shape in code comments at any depth with no range exemption. Write ``the check in `validateRequest` `` — resolve the name with `codegraph_search` if you need to.
+## Categories
 
-## Categories — walk each one
-
-For each category, the question to answer is: *given this plan, what's the worst thing a hostile actor (or a buggy caller, or a confused developer) could trigger?*
+For each one, ask: given this plan, what is the worst a hostile actor, a buggy caller or a confused developer could trigger?
 
 ### 1. Trust boundaries
 
-- Where in the design does data cross from "untrusted" to "trusted"? (Network → process, file → memory, subprocess stdout → parent state.)
-- Is the boundary explicit (single function, named type) or scattered (parsed in three places)?
-- Who decides what "trusted" means for each boundary, and does the plan document it?
-- Do downstream callers know they're now holding trusted vs untrusted data? (Type system signal? Comment? Convention?)
+- Where does data cross from untrusted to trusted: network to process, file to memory, subprocess output to parent state?
+- Is each boundary in one place, such as a single function or a named type, or scattered across several parsers?
+- Does the plan say what "trusted" means at each boundary, and can downstream code tell which kind of data it holds?
 
 ### 2. Tokens, secrets, credentials
 
-- How are tokens generated (`crypto/rand` vs `math/rand`; sufficient entropy)?
-- How are tokens stored (plaintext on disk? hashed? encrypted? what's the threat model that justifies the storage choice)?
-- Where do tokens appear in logs, error messages, or stack traces?
-- Token lifecycle — creation, storage, rotation, revocation, expiry. Are all four addressed?
-- For revocation: is it possible? Granular (per-device) or all-or-nothing? How is revocation propagated?
+- Generation: `crypto/rand` with enough entropy?
+- Storage: plaintext, hashed or encrypted, and what threat model justifies the choice?
+- Exposure: can a token reach a log line, an error message or a stack trace?
+- Lifecycle: creation, storage, rotation, revocation and expiry. Is revocation possible, per device or all at once, and how does it propagate?
 
 ### 3. File operations
 
-- Path traversal — does any code path concatenate user input into a filesystem path without canonicalisation + boundary check?
-- TOCTOU — does the plan do `os.Stat` then `os.Open` (or similar check-then-use) on a path the caller controls? If so, how does the design prevent the swap-during-the-gap attack?
-- Permissions — what mode are created files? `0600` for secrets? `0700` for cert dirs? Does the plan say it explicitly?
-- Symlink handling — does the design follow symlinks blindly, or does it use `O_NOFOLLOW` / equivalent for security-sensitive paths?
-- Atomic writes — does the design use temp-file-plus-rename for files that could leave partial state on disk if interrupted (devices.json, sessions.json, autocert keys)?
+- Path traversal: is caller input joined into a path without canonicalising and a boundary check?
+- Check-then-use: an `os.Stat` followed by `os.Open` on a path the caller controls leaves a gap to swap the file. How does the design close it?
+- Permissions: does the plan state the mode, such as `0600` for secrets and `0700` for key directories?
+- Symlinks: does the design follow them blindly, or use `O_NOFOLLOW` or an equivalent on sensitive paths?
+- Atomic writes: do files that could be left half-written, such as `devices.json`, `sessions.json` or key files, use a temporary file and a rename?
 
-### 4. Subprocess / external command execution
+### 4. Subprocesses
 
-- Are user-controlled values passed as arguments to `exec.Command`? If so, are they validated against an allowlist or shape constraint?
-- Is `sh -c` ever used (almost always wrong — it shell-interprets)?
-- What environment variables are inherited vs explicitly scrubbed?
-- Signal handling on the subprocess — how does the parent kill it cleanly? What about double-fork escapes?
+- Are caller-controlled values passed to `exec.Command`, and are they checked against an allowlist or a shape?
+- Is `sh -c` used? It shell-interprets its input and is almost always wrong.
+- Which environment variables does the child inherit, and which are scrubbed?
+- How does the parent stop the child cleanly, including a child that forks again?
 
-### 5. Cryptographic primitives
+### 5. Cryptography
 
-- RNG: `crypto/rand` everywhere randomness is security-relevant; `math/rand` is acceptable only for non-security uses (jitter, test fixtures).
-- Primitives: pick standards (TLS via `crypto/tls`, hashing via `crypto/sha256`, key derivation via `golang.org/x/crypto/argon2` or similar). Reject hand-rolled crypto on sight.
-- Key reuse — does the design accidentally use the same key/nonce for two purposes?
-- Constant-time comparison — is `crypto/subtle.ConstantTimeCompare` used wherever attacker-controlled values are compared to secrets?
+- `crypto/rand` wherever randomness matters for security. `math/rand` only for jitter and test fixtures.
+- Standard primitives only: `crypto/tls`, `crypto/sha256`, `golang.org/x/crypto` key derivation. No hand-rolled crypto.
+- Is any key or nonce used for two purposes?
+- Is every comparison of attacker-controlled input against a secret done with `crypto/subtle.ConstantTimeCompare`?
 
-### 6. Network & I/O
+### 6. Network and I/O
 
-- Input size limits — every Read from a socket needs a max-size cap. What's the cap, and is it documented in the plan?
-- Header validation — for HTTP/WS upgrades, are required headers checked for presence, length, and shape before the upgrade?
-- Timeout discipline — `http.Server` with explicit `ReadHeaderTimeout`, `ReadTimeout`, `WriteTimeout`, `IdleTimeout`. Bare `http.ListenAndServe` is a `gosec G114` violation and a real DoS vector.
-- Slow-loris resistance — does the design have a per-connection read deadline?
-- Resource exhaustion — does the design cap connections per server-id? Per IP? Total?
-- TLS configuration — `MinVersion: tls.VersionTLS12` at minimum; cipher suite policy (Go's secure defaults are fine, but if the plan sets it explicitly, audit the choice).
+- Every read from a socket needs a size cap. What is it, and does the plan state it?
+- For HTTP and WebSocket upgrades, are the required headers checked for presence, length and shape before the upgrade?
+- `http.Server` needs explicit `ReadHeaderTimeout`, `ReadTimeout`, `WriteTimeout` and `IdleTimeout`. A bare `http.ListenAndServe` is a `gosec G114` finding and a real denial-of-service risk.
+- Is there a per-connection read deadline against slow clients, and a cap on connections per server ID, per address or in total?
+- TLS: `MinVersion: tls.VersionTLS12` at least. Go's default cipher suites are fine, so audit any explicit choice.
 
-### 7. Error messages, logs, telemetry
+### 7. Errors, logs, telemetry
 
-- What goes in error messages — generic for external callers, specific for internal logs?
-- Do error messages leak: tokens, full headers, file paths, internal state, stack traces?
-- Logs — what fields are MUST-NOT-log (payloads, full headers, tokens), what fields are MUST-log (event type, server-id, conn-id, remote host)?
-- Telemetry/metrics — do they aggregate user-identifiable data the user didn't consent to?
+- External callers get generic errors and internal logs get specific ones. Can an error leak a token, a full header, a file path, internal state or a stack trace?
+- Which fields must never be logged, such as payloads, full headers and tokens, and which must be, such as event type, server ID, connection ID and remote host?
+- Do metrics aggregate anything that identifies a user who did not agree to it?
 
 ### 8. Concurrency
 
-- Lock ordering — if the design takes multiple locks, is the order documented and consistent across call sites?
-- TOCTOU on shared state — does the design check-then-mutate without holding a lock across both?
-- Shutdown safety — what happens if the process is signalled mid-write? Mid-network-Send? Are partial states recoverable on next start?
-- Goroutine lifecycle — for every goroutine the plan spawns, what causes it to exit? Is leakage possible?
+- If the design takes several locks, is the order stated and the same at every call site?
+- Does it check shared state and then change it without holding a lock across both?
+- What happens if the process is signalled mid-write or mid-send, and is a partial state recoverable on the next start?
+- For every goroutine the plan starts, what makes it exit?
 
-### 9. Threat model alignment
+### 9. The threat model
 
-- For relay tickets: does the design address each relevant threat in `pyrycode/pyrycode/docs/protocol-mobile.md` § Security model?
-- For CLI tickets: does the design address each relevant threat in `docs/threat-model.md` (when present) or the protocol spec's CLI-relevant threats?
-- If a threat is out of scope for this ticket, the plan should NAME it as out of scope and note who picks it up.
+- Relay and mobile work: does the design address each relevant threat in `docs/protocol-mobile.md` § Security model?
+- CLI work: does it address the relevant threats in that same section, or in `docs/threat-model.md` if one has been added?
+- A threat this ticket leaves out should be named in the plan as out of scope, with who picks it up.
 
 ## Decision
 
-After walking the categories, classify each finding:
+Classify each finding:
 
-- **MUST FIX** — exploitable as designed; the plan must change before you commit it.
-- **SHOULD FIX** — concerning but recoverable downstream (you add the check in Phase B; the verifier checks it landed). Note in the plan; don't gate on it.
-- **OUT OF SCOPE** — explicitly deferred to a future ticket. Name the future ticket.
+- **MUST FIX:** exploitable as designed. The plan changes before you commit it.
+- **SHOULD FIX:** concerning but fixable during the build. Note it in the plan, add the check while building, and the verifier confirms it landed.
+- **OUT OF SCOPE:** deliberately deferred. Name the ticket that picks it up.
 
-Verdict:
-- **Any MUST FIX** → FAIL. Revise the plan to address each, then re-run this checklist from the top. Do not commit the plan yet.
-- **No MUST FIX** → PASS. Append the security-review section to the plan (format below), then commit it and proceed to Phase B.
+Any MUST FIX means FAIL: revise the plan, then walk the categories again from the top before committing. With no MUST FIX the verdict is PASS. Append the section below and commit the plan.
 
-## Output format — append to the plan
+## The section to append
 
-Add a new section at the end of `docs/specs/architecture/{ticket}-{slug}.md`:
+Add this at the end of `docs/specs/architecture/<ticket>-<slug>.md`. The verifier looks for the `## Security review` heading, a verdict and a findings list.
 
 ```markdown
 ## Security review
@@ -106,14 +97,12 @@ Add a new section at the end of `docs/specs/architecture/{ticket}-{slug}.md`:
 
 **Findings:**
 
-- [Trust boundaries] No findings — design has a single explicit boundary at `internal/control/handler.go`'s `validateRequest` function; downstream code holds parsed types only.
-- [Tokens] SHOULD FIX — plan doesn't specify the file mode for `devices.json`. Write at `0600` in Phase B; the verifier must check.
-- [Network & I/O] No findings — plan inherits `http.Server` with timeouts from `cmd/pyry/main.go`'s pattern.
-- [Concurrency] OUT OF SCOPE — connection-count limits deferred to ticket #N.
+- [Trust boundaries] No findings. The design has one explicit boundary at `validateRequest` in `internal/control`; downstream code holds parsed types only.
+- [Tokens] SHOULD FIX: the plan does not give the file mode for `devices.json`. Write it at `0600`; the verifier checks it.
+- [Network and I/O] No findings. The plan reuses the `http.Server` timeouts already set in `cmd/pyry`.
+- [Concurrency] OUT OF SCOPE: connection-count limits are deferred to #N.
 - [...]
 
 **Reviewer:** builder (self-review per the security-review checklist)
 **Date:** <YYYY-MM-DD>
 ```
-
-If verdict is FAIL, do NOT commit the plan yet. Revise inline, then re-run.
