@@ -61,14 +61,13 @@ A ticket ships as one ticket only if every line holds:
 
 | Limit | Boundary |
 |---|---|
-| Production source files created or modified | ≤ 5 |
 | Total written work: production, tests, helpers, per-branch log calls and plan edits | ≤ 800 lines |
 | New exported types or interfaces | ≤ 5 |
 | Consumer call sites needing simultaneous update | ≤ 10 |
 | Acceptance criteria | ≤ 5 |
 | Distinct error or reject branches in a state machine | ≤ 10 |
 
-The refiner applies the same numbers. You apply them twice: to the body and your sketch now, and to the written plan before you commit it. The line and file ceilings were set on 2026-09-02 against this role's budget, and the measurement is in the refiner's sizing guide.
+The refiner applies the same numbers. You apply them twice: to the body and your sketch now, and to the written plan before you commit it. The line ceiling was set on 2026-09-02 against this role's budget, and the measurement is in the refiner's sizing guide.
 
 Count total written work, not production lines. Tests are most of it, since each test function is its own edit and debug cycle, and per-branch log calls multiply with every reject branch. On 2026-05-16, #432, #445 and #446 were planned at 60 to 150 production lines and landed at 541, 2096 and 1071 lines in total.
 
@@ -119,7 +118,7 @@ The plan is the record the verifier diffs your implementation against. It is als
 
 ### Before you commit the plan
 
-Re-count the six limits against the plan you actually wrote, since the sketch and the finished plan are different measurements. For the file count, count production source files the plan creates or changes: `*.go` files, excluding `*_test.go`, Markdown and the plan itself. #311 claimed 4 files and about 80 lines and landed 13 files and over 300 lines. If a limit trips now, do not commit and do not start building. Hand the ticket back with two or three candidate slices that follow seams in your Design section, as `handbacks.md` describes, and delete the uncommitted plan file so the dispatcher's auto-commit does not push it.
+Re-count the five limits against the plan you actually wrote, since the sketch and the finished plan are different measurements. #311 claimed about 80 lines and landed over 300. If a limit trips now, do not commit and do not start building. Hand the ticket back with two or three candidate slices that follow seams in your Design section, as `handbacks.md` describes, and delete the uncommitted plan file so the dispatcher's auto-commit does not push it.
 
 On a `security-sensitive` ticket, run the pass in `security-review.md` before you commit. It appends a `## Security review` section, and the verifier fails a labelled ticket whose plan has none. The label decides whether the pass runs, not your view of the ticket's size. If `$AGENTS_REPO_PATH` is unset or the file is missing, that is a dispatch fault: report it as the shared practice says to report a denied operation, and stop.
 
