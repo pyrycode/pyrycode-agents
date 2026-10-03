@@ -1,0 +1,22 @@
+#!/bin/sh
+# Stand-in for the Mac's 1Password helper inside the container.
+#
+# bin/pyry-start launches the dispatcher as
+#   "$PYRY_AUTOMATION_ACCESS" op run --env-file=<agents>/.env -- <command...>
+# On the Mac, `op run` resolves the op:// references in .env. In the
+# container the secrets already arrive as environment variables from Podman
+# secrets, and the dispatcher loads .env itself, so this only runs the
+# command after `--`.
+set -e
+if [ "$1" != op ] || [ "$2" != run ]; then
+  echo "automation-access-shim: only 'op run ... -- command' is supported, got: $*" >&2
+  exit 2
+fi
+shift 2
+while [ "$#" -gt 0 ] && [ "$1" != -- ]; do shift; done
+if [ "$#" -eq 0 ]; then
+  echo "automation-access-shim: no '--' before the command" >&2
+  exit 2
+fi
+shift
+exec "$@"

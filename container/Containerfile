@@ -1,0 +1,74 @@
+# Runtime image for the pyrycode agent dispatcher on Linux.
+#
+# Built and run with rootless Podman on pyrybox; any OCI engine builds it.
+# Build context is this directory. See README.md for build, secrets and
+# switch-over. Versions are pinned to what the Mac dispatcher ran on
+# 2026-10-03; bump them here, never by letting a tool self-update.
+FROM docker.io/library/ubuntu:24.04
+
+ARG GO_VERSION=1.26.2
+ARG NODE_VERSION=25.8.0
+ARG PNPM_VERSION=10.32.1
+ARG GH_VERSION=2.88.1
+ARG CLAUDE_VERSION=2.1.280
+ARG PYRY_VERSION=v0.31.1
+ARG QMD_VERSION=2.1.0
+ARG CODEGRAPH_VERSION=0.6.8
+ARG STATICCHECK_VERSION=2026.1
+
+# gcc and libc6-dev: `go test -race` needs cgo. perl: bin/pyry-start's
+# process-group step. bsdextrautils: `column`, which role docs use.
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      bash bsdextrautils ca-certificates curl gcc git jq libc6-dev make \
+      perl procps python3 xz-utils \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" \
+      | tar -C /usr/local -xz
+RUN curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
+      | tar -C /usr/local --strip-components=1 -xJ
+RUN curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" \
+      | tar -C /usr/local --strip-components=1 -xz
+
+RUN npm install -g --no-fund --no-audit \
+      "pnpm@${PNPM_VERSION}" \
+      "@tobilu/qmd@${QMD_VERSION}" \
+      "@colbymchenry/codegraph@${CODEGRAPH_VERSION}"
+
+# The native installer writes to $HOME; copy the single binary out so the
+# runtime user, whose home is a mounted volume, finds it on PATH.
+RUN HOME=/tmp/claude-install bash -c \
+      "curl -fsSL https://claude.ai/install.sh | bash -s ${CLAUDE_VERSION}" \
+ && install -m 0755 "$(readlink -f /tmp/claude-install/.local/bin/claude)" /usr/local/bin/claude \
+ && rm -rf /tmp/claude-install
+
+# pyry runs each agent (`pyry agent-run`). staticcheck is pre-installed so
+# `make check` never tries to `go install` it into a read-only path.
+RUN GOPATH=/tmp/gopath GOBIN=/usr/local/bin GOTOOLCHAIN=local GOFLAGS=-modcacherw \
+      /usr/local/go/bin/go install -ldflags "-X main.Version=${PYRY_VERSION#v}" \
+        "github.com/pyrycode/pyrycode/cmd/pyry@${PYRY_VERSION}" \
+ && GOPATH=/tmp/gopath GOBIN=/usr/local/bin GOTOOLCHAIN=local GOFLAGS=-modcacherw \
+      /usr/local/go/bin/go install "honnef.co/go/tools/cmd/staticcheck@${STATICCHECK_VERSION}" \
+ && rm -rf /tmp/gopath /root/.cache
+
+COPY user-files/board-cards /usr/local/bin/board-cards
+COPY user-files/claude/ /opt/pyry-container/claude/
+COPY automation-access-shim /usr/local/bin/automation-access-shim
+COPY entrypoint.sh /usr/local/bin/pyry-container
+RUN chmod 0755 /usr/local/bin/board-cards /usr/local/bin/automation-access-shim \
+      /usr/local/bin/pyry-container /opt/pyry-container/claude/hooks/gh-board-listing-guard.py
+
+# HOME is a mounted volume (Claude state, transcripts, Go caches, qmd
+# index), so it survives image rebuilds. /work holds the two repositories
+# and the worktree folder beside them.
+ENV HOME=/home/agent \
+    SHELL=/bin/bash \
+    GOTOOLCHAIN=local \
+    DISABLE_AUTOUPDATER=1 \
+    PYRY_AUTOMATION_ACCESS=/usr/local/bin/automation-access-shim \
+    PATH=/home/agent/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+WORKDIR /work
+ENTRYPOINT ["/usr/local/bin/pyry-container"]
+CMD ["run"]

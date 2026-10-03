@@ -1,0 +1,120 @@
+#!/usr/bin/env python3
+"""List a GitHub project board's cards cheaply.
+
+    board-cards <board> [column | ticket number ...] [--owner LOGIN] [--json]
+
+    board-cards 5                    every card on board 5
+    board-cards 5 Backlog            only the Backlog column
+    board-cards 5 815 816 817        only those tickets, to see their columns
+
+Prints one card per line: number, column, open or closed, title. --json prints
+the cards as a JSON array with labels included. The owner defaults to pyrycode.
+
+Replaces `gh project item-list`, which asks for every field value of every card
+and costs about one GraphQL point per requested slot, 303 points for board 1.
+This query costs about 2 points a page of 100 cards. Every dispatcher, agent
+and session shares one 5000-point hourly budget. Measured 2026-09-22.
+"""
+import json, subprocess, sys
+
+QUERY = """
+query($owner: String!, $number: Int!, $cursor: String) {
+  repositoryOwner(login: $owner) {
+    ... on ProjectV2Owner {
+      projectV2(number: $number) {
+        items(first: 100, after: $cursor) {
+          pageInfo { hasNextPage endCursor }
+          nodes {
+            fieldValueByName(name: "Status") {
+              ... on ProjectV2ItemFieldSingleSelectValue { name }
+            }
+            content {
+              ... on Issue { number title state labels(first: 10) { nodes { name } } }
+              ... on PullRequest { number title state labels(first: 10) { nodes { name } } }
+              ... on DraftIssue { title }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"""
+MAX_PAGES = 50
+
+
+def fail(msg):
+    print(f"board-cards: {msg}", file=sys.stderr)
+    sys.exit(1)
+
+
+def fetch(owner, number):
+    cards, cursor = [], None
+    for _ in range(MAX_PAGES):
+        args = ["gh", "api", "graphql", "-f", f"query={QUERY}",
+                "-f", f"owner={owner}", "-F", f"number={number}"]
+        if cursor:
+            args += ["-f", f"cursor={cursor}"]
+        out = subprocess.run(args, capture_output=True, text=True)
+        if out.returncode != 0:
+            fail(out.stderr.strip() or "gh failed")
+        project = ((json.loads(out.stdout).get("data") or {})
+                   .get("repositoryOwner") or {}).get("projectV2")
+        if not project:
+            fail(f"no board {number} for {owner}")
+        page = project["items"]
+        for node in page["nodes"]:
+            c = node.get("content") or {}
+            cards.append({
+                "number": c.get("number"),
+                "status": (node.get("fieldValueByName") or {}).get("name") or "No status",
+                "state": (c.get("state") or "").lower() or None,
+                "title": (c.get("title") or "").strip(),
+                "labels": [l["name"] for l in (c.get("labels") or {}).get("nodes", [])],
+            })
+        if not page["pageInfo"]["hasNextPage"]:
+            return cards
+        cursor = page["pageInfo"]["endCursor"]
+    fail(f"more than {MAX_PAGES} pages")
+
+
+def main(argv):
+    owner, as_json, rest = "pyrycode", False, []
+    it = iter(argv)
+    for a in it:
+        if a == "--owner":
+            owner = next(it, None) or fail("--owner needs a login")
+        elif a == "--json":
+            as_json = True
+        elif a in ("-h", "--help"):
+            print(__doc__.strip())
+            return
+        else:
+            rest.append(a)
+    if not rest or not rest[0].isdigit():
+        fail("usage: board-cards <board> [column | ticket number ...] [--owner LOGIN] [--json]")
+    board, filters = int(rest[0]), rest[1:]
+
+    cards = fetch(owner, board)
+    numbers = {int(f.lstrip("#")) for f in filters if f.lstrip("#").isdigit()}
+    columns = {f.lower() for f in filters if not f.lstrip("#").isdigit()}
+    if numbers:
+        cards = [c for c in cards if c["number"] in numbers]
+        missing = numbers - {c["number"] for c in cards}
+        if missing:
+            print(f"board-cards: not on board {board}: "
+                  + ", ".join(f"#{n}" for n in sorted(missing)), file=sys.stderr)
+    if columns:
+        cards = [c for c in cards if c["status"].lower() in columns]
+    cards.sort(key=lambda c: (c["status"], c["number"] is None, c["number"] or 0))
+
+    if as_json:
+        print(json.dumps(cards, ensure_ascii=False, indent=1))
+        return
+    for c in cards:
+        n = f"#{c['number']}" if c["number"] is not None else "draft"
+        print(f"{n}\t{c['status']}\t{c['state'] or '-'}\t{c['title']}")
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
