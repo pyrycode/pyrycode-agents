@@ -135,7 +135,6 @@ A ticket ships as one ticket only if every line holds.
 
 | Limit | Boundary |
 |---|---|
-| Production source files created or modified | ≤ 5 |
 | Total written work (production + tests + helpers + per-branch log calls + spec-doc edits) | ≤ 800 lines |
 | New exported types or interfaces | ≤ 5 |
 | Consumer call sites needing simultaneous update | ≤ 10 |
@@ -160,7 +159,7 @@ The table is mechanical. When a line is exceeded after the floor below has been 
 
 **The builder can find the work smaller than your estimate, but cannot grow the ticket.** Oversized work comes back to you through `needs-rework:refiner` with a split proposal. When you and the builder disagree on size, the builder's view wins, because it has sketched the actual design.
 
-**Where the numbers come from.** The 800-line and 5-file ceilings were set on 2026-09-02 from the builder's first 21 runs here: the median run used 60 turns and 14 minutes, the heaviest 127 turns and 23 minutes, and the median merged PR added about 920 lines. Line count predicts effort weakly, so the ceiling bounds the tail and the call-site and reject-branch lines still bind on their own. The M tier was removed on 2026-05-02 after pyrycode #45, sized M with five files and ten criteria, exhausted its budget; the old relay's "Why M, not split" escape failed the same way. Do not move these numbers from memory. A builder run that exhausts a second continuation leg is the evidence that would, and belongs on that ticket as a comment.
+**Where the numbers come from.** The 800-line ceiling was set on 2026-09-02 from the builder's first 21 runs here: the median run used 60 turns and 14 minutes, the heaviest 127 turns and 23 minutes, and the median merged PR added about 920 lines. Line count predicts effort weakly, so the ceiling bounds the tail and the call-site and reject-branch lines still bind on their own. A five-file ceiling sat beside it until 2026-10-03, when it was removed. File count measured how a change is wired rather than how much work it is: one new desktop event type forces a one-line case in about eight files. It did not bound the tail either: desktop #1249, estimated at 1300 lines over 12 files, built inside the budget. The M tier was removed on 2026-05-02 after pyrycode #45, sized M with five files and ten criteria, exhausted its budget; the old relay's "Why M, not split" escape failed the same way. Do not move these numbers from memory. A builder run that exhausts a second continuation leg is the evidence that would, and belongs on that ticket as a comment.
 
 ### The sizing test
 
