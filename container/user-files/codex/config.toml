@@ -1,0 +1,39 @@
+# Codex settings for the dispatcher's Codex runner (PYRY_AGENT_RUNNER=codex).
+# Installed by the entrypoint on every start; edit here, not in the volume.
+# Mirrors the Mac's ~/.codex/config.toml minus its desktop, plugin and
+# interactive-only MCP entries.
+
+model = "gpt-6.1-sol"
+model_reasoning_effort = "high"
+
+# The container is the sandbox. Codex's own Linux sandbox is not relied on
+# inside rootless Podman.
+sandbox_mode = "danger-full-access"
+
+# Pass the environment through so agents' gh and git push see GH_TOKEN.
+# Codex's default excludes drop every *TOKEN* variable, so they are switched
+# off and the secrets agents must not see are excluded by name instead.
+[shell_environment_policy]
+inherit = "all"
+ignore_default_excludes = true
+exclude = ["CLAUDE_CODE_OAUTH_TOKEN", "DISCORD_WEBHOOK_URL", "GITHUB_TOKEN", "OPENAI_API_KEY"]
+
+[shell_environment_policy.set]
+DISABLE_AUTOUPDATER = "1"
+
+[mcp_servers.qmd]
+command = "qmd"
+args = ["mcp"]
+
+[mcp_servers.codegraph]
+command = "codegraph"
+args = ["serve", "--mcp"]
+
+[mcp_servers.codegraph.tools.codegraph_search]
+approval_mode = "approve"
+
+[mcp_servers.codegraph.tools.codegraph_status]
+approval_mode = "approve"
+
+[projects."/work/Projects/pyrycode"]
+trust_level = "trusted"

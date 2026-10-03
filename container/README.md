@@ -8,7 +8,7 @@ Runs this fork's dispatcher, and every agent it spawns, inside a rootless Podman
 |---|---|
 | Image | `localhost/pyrycode-agent-runtime:latest`, built on pyrybox from this folder |
 | Repositories and worktrees | `~/pyrycode-runtime/work` on pyrybox, mounted at `/work` |
-| Claude state, transcripts, Go and qmd caches, gh login | `~/pyrycode-runtime/home`, mounted at `/home/agent` |
+| Claude state, transcripts, Go and qmd caches | `~/pyrycode-runtime/home`, mounted at `/home/agent` |
 | Settings | `~/pyrycode-runtime/config/dispatcher.env`, a copy of `dispatcher.env` |
 | Secrets | Podman secrets `pyrycode-github-token`, `pyrycode-claude-token`, `pyrycode-discord-webhook` |
 | Service | `pyrycode-dispatcher.container`, a Quadlet unit run by the pyry account's systemd user manager |
@@ -43,10 +43,22 @@ All commands below run on the Mac from this folder unless marked pyrybox.
       ```
 5. **Roll back** (pyrybox): `systemctl --user stop pyrycode-dispatcher`, which drains first, then remove the unit file and run `systemctl --user daemon-reload`. After that, start `bin/pyry-start` on the Mac again.
 
+## Codex runner
+
+The image includes Codex, so the dispatcher can run with `--runner codex` or `PYRY_AGENT_RUNNER=codex`. Codex logs in with a ChatGPT account, not a token, so it needs a one-time device login of its own. Do not copy the Mac's `~/.codex/auth.json`: two machines refreshing one login can sign the Mac out. On pyrybox:
+
+```bash
+podman run --rm -it --userns=keep-id -v ~/pyrycode-runtime/home:/home/agent \
+  localhost/pyrycode-agent-runtime:latest codex-login
+```
+
+It prints a URL and a code to approve in a browser on any device. The login is stored in `~/pyrycode-runtime/home/.codex/auth.json`, readable by the pyry account like the other secrets. The container's Codex settings in `user-files/codex/config.toml` turn off Codex's own sandbox, because the container is the sandbox, and pass `GH_TOKEN` through to agent commands while excluding the other secrets.
+
 ## How it differs from the Mac
 
 - **Secrets** come from Podman secrets, not from `op run`. `automation-access-shim` stands in for the 1Password helper so `bin/pyry-start` runs unchanged. The dispatcher loads `.env` itself.
-- **Agents' GitHub login** is the dispatcher's token, which the entrypoint stores as gh's login on every start. On the Mac, agents used the personal login in the Keychain. The stored copy is a plain file under `~/pyrycode-runtime/home/.config/gh`, readable by the pyry account.
+- **Agents' GitHub login** is the dispatcher's token, passed as `GH_TOKEN`, which the dispatcher does not scrub from agent environments. git pushes through gh's credential helper. On the Mac, agents used the personal login in the Keychain. No login is stored on disk. The token cannot be stored as a gh login anyway, because it lacks the `read:org` scope that `gh auth login` validates.
+- **Secrets at rest:** Podman keeps secrets as plain files under the pyry account's home, so Pyry can read them. Accepted on 2026-10-04 as temporary; a safer arrangement is still open.
 - **qmd** indexes only this repository: `pyrycode-docs` and `pyrycode-root`. On the Mac, agents could also search the personal vault and the other forks' docs.
 - **No Figma MCP.** It needs an interactive OAuth login, and this fork's agents do not use it.
 - **User-level Claude files** are copies in `user-files/`: the shared git policy as `CLAUDE.md`, the `gh project item-list` guard hook, and `board-cards`. When the Mac originals change, update the copies and rebuild.

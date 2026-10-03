@@ -4,6 +4,7 @@
 #   pyry-container check   print tool versions and which secrets are present
 #   pyry-container setup   provision repos, logins, Claude config and indexes
 #   pyry-container smoke   setup, then prove GitHub and Claude logins work
+#   pyry-container codex-login  one-time ChatGPT device login for Codex
 #   pyry-container run     setup, then start the dispatcher (the default)
 #
 # Every step is idempotent. Only the indexes are slow, and they are built
@@ -17,6 +18,7 @@ TARGET_REPO_URL="${TARGET_REPO_URL:-https://github.com/pyrycode/pyrycode.git}"
 AGENTS_REPO_URL="${AGENTS_REPO_URL:-https://github.com/pyrycode/pyrycode-agents.git}"
 CONFIG_ENV="${CONFIG_ENV:-/config/dispatcher.env}"
 CLAUDE_FILES=/opt/pyry-container/claude
+CODEX_FILES=/opt/pyry-container/codex
 INDEX_STAMP="$HOME/.pyry-container-indexes-v1"
 
 log() { echo "[pyry-container] $*" >&2; }
@@ -47,13 +49,14 @@ setup_git() {
   git config --global user.name "${GIT_USER_NAME:?set GIT_USER_NAME in dispatcher.env}"
   git config --global user.email "${GIT_USER_EMAIL:?set GIT_USER_EMAIL in dispatcher.env}"
   git config --global init.defaultBranch main
-  # The dispatcher scrubs GITHUB_TOKEN from agent environments, so agents'
-  # gh and git push need a stored login. Refresh it from the secret on every
-  # start. gh refuses to store a login while the variable is set.
-  printf '%s\n' "$GITHUB_TOKEN" \
-    | env -u GITHUB_TOKEN -u GH_TOKEN gh auth login --hostname github.com \
-        --git-protocol https --insecure-storage --with-token
-  env -u GITHUB_TOKEN -u GH_TOKEN gh auth setup-git --hostname github.com
+  # The dispatcher scrubs GITHUB_TOKEN from agent environments but passes
+  # GH_TOKEN through, and gh prefers GH_TOKEN. So agents' gh, and git push
+  # through gh's credential helper, use the same token with no login stored
+  # on disk. (`gh auth login --with-token` refuses this token: it lacks the
+  # read:org scope that login validation demands.)
+  export GH_TOKEN="$GITHUB_TOKEN"
+  git config --global credential.https://github.com.helper ''
+  git config --global --add credential.https://github.com.helper '!gh auth git-credential'
 }
 
 setup_repos() {
@@ -99,6 +102,14 @@ setup_claude() {
   fi
 }
 
+setup_codex() {
+  # Codex keeps its ChatGPT login in ~/.codex/auth.json, made once with
+  # `pyry-container codex-login`. Settings are rewritten on every start.
+  mkdir -p "$HOME/.codex"
+  install -m 0600 "$CODEX_FILES/config.toml" "$HOME/.codex/config.toml"
+  install -m 0644 "$CLAUDE_FILES/CLAUDE.md" "$HOME/.codex/AGENTS.md"
+}
+
 setup_indexes() {
   [ -f "$INDEX_STAMP" ] && return 0
   log "first run: building the qmd and codegraph indexes (slow on this CPU)"
@@ -125,6 +136,7 @@ setup() {
   setup_git
   setup_repos
   setup_claude
+  setup_codex
   setup_indexes
 }
 
@@ -132,7 +144,7 @@ check() {
   local tool
   for tool in "git --version" "go version" "node --version" "pnpm --version" \
               "gh --version" "claude --version" "pyry --version" "qmd --version" \
-              "codegraph --version" "staticcheck -version" "perl -e print(\$^V)"; do
+              "codegraph --version" "codex --version" "staticcheck -version" "perl -e print(\$^V)"; do
     printf '%-20s %s\n' "${tool%% *}" "$($tool 2>&1 | head -1)"
   done
   for tool in GITHUB_TOKEN CLAUDE_CODE_OAUTH_TOKEN DISCORD_WEBHOOK_URL; do
@@ -142,14 +154,20 @@ check() {
 
 smoke() {
   setup
-  log "GitHub login: $(env -u GITHUB_TOKEN -u GH_TOKEN gh api user -q .login)"
+  log "GitHub login: $(env -u GITHUB_TOKEN gh api user -q .login)"
+  log "GitHub push access: $(env -u GITHUB_TOKEN git -C "$TARGET" push --dry-run origin HEAD:refs/heads/container-smoke-test 2>&1 | tail -1)"
   log "Claude: $(cd /tmp && claude -p 'Reply with the single word OK.' --max-turns 1 2>&1 | tail -1)"
+  log "Codex login: $(codex login status 2>&1 | tail -1)"
 }
 
 case "${1:-run}" in
   check) check ;;
   setup) setup ;;
   smoke) smoke ;;
+  codex-login)
+    setup_codex
+    codex login --device-auth
+    ;;
   run)
     shift || true
     setup
@@ -157,7 +175,7 @@ case "${1:-run}" in
     exec "$AGENTS/bin/pyry-start" "$@"
     ;;
   *)
-    echo "usage: pyry-container [check|setup|smoke|run [dispatcher args...]]" >&2
+    echo "usage: pyry-container [check|setup|smoke|codex-login|run [dispatcher args...]]" >&2
     exit 2
     ;;
 esac
