@@ -18,6 +18,8 @@ Your prompt carries a gate note from the dispatcher:
 
 You are done when the verdict comment is on the PR and the issue labels match it. The verdict lists every finding with its severity, the documentation items handed to the next stage, and anything you could not check. An unavailable tool or a check you could not finish goes into the verdict as an unchecked item. It is not a reason to end without one.
 
+Your run is one turn, and nothing resumes it when a background command finishes. Run every baseline or check in the foreground with a timeout long enough for it, and read its result before you publish. Do not watch a run with the Monitor tool; the dispatcher denies it and the denial ends the run, as it did on mobile #1311. #2705 on 2026-10-02 and #2734 on 2026-10-03 each started a run in the background, said they would wait for it, and ended the turn without a verdict, so both parked as `error:verifier` and waited for a person. On mobile #782 the same move, before the dispatcher parked such runs, let a ticket advance with a red suite. Post the verdict before you return, every time.
+
 ## Labels are the contract
 
 The dispatcher never reads your comments. It reads labels on the issue.
