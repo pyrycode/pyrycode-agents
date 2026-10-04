@@ -60,7 +60,11 @@ setup_git() {
   # on disk. (`gh auth login --with-token` refuses this token: it lacks the
   # read:org scope that login validation demands.)
   export GH_TOKEN="$GITHUB_TOKEN"
-  git config --global credential.https://github.com.helper ''
+  # Two values: the empty one clears inherited helpers, then gh. Unset all
+  # first, because this runs on every start and a plain set refuses a key
+  # that already has two values.
+  git config --global --unset-all credential.https://github.com.helper || true
+  git config --global --add credential.https://github.com.helper ''
   git config --global --add credential.https://github.com.helper '!gh auth git-credential'
 }
 
