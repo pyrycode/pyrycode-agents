@@ -64,7 +64,19 @@ podman run --rm -it --userns=keep-id -v ~/pyrycode-runtime/home:/home/agent \
 
 It prints a URL and a code to approve in a browser on any device. For the desktop fork, add `-e FORK=pyrycode-desktop` and mount `home-desktop`. Both homes were logged in on 2026-10-04. The login is stored in the home folder's `.codex/auth.json`, readable by the pyry account like the other secrets.
 
-Both forks run on Codex since 2026-10-04: `PYRY_AGENT_RUNNER=codex` in each `forks/*.env`. To switch a fork back to Claude, comment that line out, run `./deploy.sh`, and restart its service.
+Both forks run on Codex since 2026-10-04.
+
+**Switching runners needs no restart.** The dispatcher reads a runner file before every agent run (agent-dispatcher#112). For each fork it is `runner.json` in that fork's config folder on pyrybox: `~/pyrycode-runtime/config/runner.json` for pyrycode and `config-desktop/runner.json` for desktop. Edit it there, and the next agent run uses the new choice:
+
+```json
+{"runner": "claude"}
+{"runner": "codex", "roles": {"verifier": "claude"}}
+```
+
+- **Precedence:** a role entry beats `runner`.
+- **Fallback:** `PYRY_AGENT_RUNNER=codex` in `forks/*.env` applies when the file is absent.
+- **Broken file:** an invalid edit keeps the last valid choice and logs a warning.
+- **Deploys:** `deploy.sh` creates the file only if it is missing, so a deploy never resets it.
 
 - **Settings:** `user-files/codex/config.toml` turns off Codex's own sandbox, because the container is the sandbox. It passes `GH_TOKEN` through to agent commands and excludes the other secrets. It also gives Codex the qmd and codegraph servers.
 - **Helpers:** the working-practice docs call the Mac's Codex helpers by absolute path, such as `/Users/juhanailmoniemi/.codex/bin/pyrycode-pipeline-action`, because Codex's approval rules match on exact paths. The image recreates those paths instead of forking the docs:

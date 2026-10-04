@@ -23,7 +23,9 @@ remote 'rm -rf ~/pyrycode-runtime/build && cd ~/pyrycode-runtime 2>/dev/null || 
 COPYFILE_DISABLE=1 tar -C "$HERE" --no-xattrs -cf - . | remote 'tar -C ~/pyrycode-runtime/build -xf - 2>/dev/null'
 # The pyrycode fork keeps the unsuffixed folders it was first provisioned in.
 remote 'install -m 0600 ~/pyrycode-runtime/build/forks/pyrycode.env ~/pyrycode-runtime/config/dispatcher.env
-        install -m 0600 ~/pyrycode-runtime/build/forks/pyrycode-desktop.env ~/pyrycode-runtime/config-desktop/dispatcher.env'
+        install -m 0600 ~/pyrycode-runtime/build/forks/pyrycode-desktop.env ~/pyrycode-runtime/config-desktop/dispatcher.env
+        # The runner file is live, edited on pyrybox; create it only if missing so a deploy never resets it.
+        for c in config config-desktop; do [ -f ~/pyrycode-runtime/$c/runner.json ] || install -m 0644 ~/pyrycode-runtime/build/runner.json.default ~/pyrycode-runtime/$c/runner.json; done'
 
 echo "Building $IMAGE on $HOST"
 remote "podman build --pull=newer -t $IMAGE ~/pyrycode-runtime/build"
