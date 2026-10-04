@@ -6,6 +6,12 @@
 model = "gpt-6.1-sol"
 model_reasoning_effort = "high"
 
+# MCP OAuth logins, such as Figma's in the desktop container, are stored as a
+# file in the home volume: the container has no OS keyring. The fixed callback
+# port lets a re-login be forwarded from the Mac (README, Figma).
+mcp_oauth_credentials_store = "file"
+mcp_oauth_callback_port = 18765
+
 # The container is the sandbox. Codex's own Linux sandbox is not relied on
 # inside rootless Podman.
 sandbox_mode = "danger-full-access"

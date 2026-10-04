@@ -1,0 +1,7 @@
+
+# Desktop fork only, appended by the entrypoint. The builder stops a UI ticket
+# as blocked without Figma. The login is a one-time OAuth sign-in stored in
+# the desktop home volume (README, Figma). Not given to the pyrycode fork,
+# whose agents do not use Figma and whose home has no Figma login.
+[mcp_servers.figma]
+url = "https://mcp.figma.com/mcp"
