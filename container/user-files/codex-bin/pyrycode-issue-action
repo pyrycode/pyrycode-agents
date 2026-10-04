@@ -1,0 +1,40 @@
+#!/usr/bin/python3 -I
+"""Operator-approved Pyrycode issue comments and any label changes."""
+import re
+import subprocess
+import sys
+
+REPO = 'github.com/pyrycode/pyrycode'
+GH = '/opt/homebrew/bin/gh'
+
+
+
+def command(args):
+    if len(args) != 3:
+        raise ValueError('Expected: comment|add-label|remove-label ISSUE VALUE')
+    action, issue, value = args
+    if not re.fullmatch(r'[1-9][0-9]{0,9}', issue):
+        raise ValueError('ISSUE must be one positive numeric issue number')
+    if action == 'comment':
+        if not value.strip() or len(value) > 30000:
+            raise ValueError('Comment must contain 1 to 30000 characters')
+        return [GH, 'issue', 'comment', issue, '--repo', REPO, '--body=' + value]
+    if action in ('add-label', 'remove-label'):
+        if not value.strip() or len(value) > 50 or any(ord(c) < 32 for c in value):
+            raise ValueError('Label must contain 1 to 50 printable characters')
+        return [GH, 'issue', 'edit', issue, '--repo', REPO, '--' + action + '=' + value]
+    raise ValueError('Unsupported action')
+
+
+def main(args):
+    try:
+        argv = command(args)
+    except ValueError as error:
+        print(str(error), file=sys.stderr)
+        return 2
+    # No shell, arbitrary executable, repository override, file read or extra flags.
+    return subprocess.run(argv, check=False).returncode
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))

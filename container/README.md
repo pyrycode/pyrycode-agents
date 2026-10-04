@@ -62,7 +62,20 @@ podman run --rm -it --userns=keep-id -v ~/pyrycode-runtime/home:/home/agent \
   localhost/pyrycode-agent-runtime:latest codex-login
 ```
 
-It prints a URL and a code to approve in a browser on any device. The login is stored in the home folder's `.codex/auth.json`, readable by the pyry account like the other secrets. The container's Codex settings in `user-files/codex/config.toml` turn off Codex's own sandbox, because the container is the sandbox, and pass `GH_TOKEN` through to agent commands while excluding the other secrets. The Mac-only Codex helper scripts under `~/.codex/bin` are not in the image.
+It prints a URL and a code to approve in a browser on any device. For the desktop fork, add `-e FORK=pyrycode-desktop` and mount `home-desktop`. Both homes were logged in on 2026-10-04. The login is stored in the home folder's `.codex/auth.json`, readable by the pyry account like the other secrets.
+
+To run a fork on Codex, uncomment `PYRY_AGENT_RUNNER=codex` in its `forks/*.env`, run `./deploy.sh`, and restart its service. Claude stays the default.
+
+- **Settings:** `user-files/codex/config.toml` turns off Codex's own sandbox, because the container is the sandbox. It passes `GH_TOKEN` through to agent commands and excludes the other secrets. It also gives Codex the qmd and codegraph servers.
+- **Helpers:** the working-practice docs call the Mac's Codex helpers by absolute path, such as `/Users/juhanailmoniemi/.codex/bin/pyrycode-pipeline-action`, because Codex's approval rules match on exact paths. The image recreates those paths instead of forking the docs:
+  - The helpers are copied into `user-files/codex-bin/` from the Mac's `~/.codex/bin`.
+  - `/Users/juhanailmoniemi/Workspace/Projects` links to `/work/Projects`.
+  - `/opt/homebrew/bin/gh` and `/opt/homebrew/bin/node` link to the image's own.
+  - The publish folder is a real directory, because the helpers refuse to follow links into it.
+
+  When the Mac's helpers change, copy them again and rebuild.
+
+Verified 2026-10-04 in both containers: Codex answered a prompt, `gh` reached GitHub as the token's account, all codegraph and qmd tools were listed, and the helpers ran from their Mac paths.
 
 ## How it differs from the Mac
 

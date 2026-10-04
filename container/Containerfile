@@ -80,10 +80,25 @@ RUN GOPATH=/tmp/gopath GOBIN=/usr/local/bin GOTOOLCHAIN=local GOFLAGS=-modcacher
 COPY user-files/board-cards /usr/local/bin/board-cards
 COPY user-files/claude/ /opt/pyry-container/claude/
 COPY user-files/codex/ /opt/pyry-container/codex/
+COPY user-files/codex-bin/ /opt/codex-helpers/
 COPY automation-access-shim /usr/local/bin/automation-access-shim
 COPY entrypoint.sh /usr/local/bin/pyry-container
 RUN chmod 0755 /usr/local/bin/board-cards /usr/local/bin/automation-access-shim \
-      /usr/local/bin/pyry-container /opt/pyry-container/claude/hooks/gh-board-listing-guard.py
+      /usr/local/bin/pyry-container /opt/pyry-container/claude/hooks/gh-board-listing-guard.py \
+      /opt/codex-helpers/*
+
+# Codex runner: the agents' working-practice docs call the Mac's Codex helpers by
+# absolute path, because Codex's approval rules match on exact paths. Recreate those
+# paths here instead of forking the docs. The helpers resolve the repository path, so
+# a link to /work works. They open the publish folder without following links, so
+# that folder and its parents must be real directories. The publish folder is
+# writable and sticky, and lives only for the container's lifetime.
+RUN mkdir -p /opt/homebrew/bin /Users/juhanailmoniemi/Workspace /Users/juhanailmoniemi/.codex/publish \
+ && ln -s /usr/local/bin/gh /opt/homebrew/bin/gh \
+ && ln -s /usr/local/bin/node /opt/homebrew/bin/node \
+ && ln -s /work/Projects /Users/juhanailmoniemi/Workspace/Projects \
+ && ln -s /opt/codex-helpers /Users/juhanailmoniemi/.codex/bin \
+ && chmod 1777 /Users/juhanailmoniemi/.codex/publish
 
 # HOME is a mounted volume (Claude state, transcripts, Go caches, qmd
 # index), so it survives image rebuilds. /work holds the two repositories
