@@ -24,10 +24,12 @@ Secret=pyrycode-claude-token,type=env,target=CLAUDE_CODE_OAUTH_TOKEN
 Secret=pyrycode-discord-webhook,type=env,target=DISCORD_WEBHOOK_URL
 # Chromium crashes on Podman's default 64 MB /dev/shm. A stop drains: the
 # dispatcher waits for running agents, which can take most of an hour.
-PodmanArgs=--cpus=6 --memory=24g --shm-size=2g --stop-timeout=3600
+PodmanArgs=--cpus=6 --shm-size=2g --stop-timeout=3600
 Exec=run
 
 [Service]
+# Shares one 16 GB memory cap with the other agent container.
+Slice=pyrycode-agents.slice
 Restart=on-failure
 RestartSec=60
 TimeoutStartSec=3600

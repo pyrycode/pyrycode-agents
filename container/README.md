@@ -14,7 +14,7 @@ Runs the pyrycode and pyrycode-desktop dispatchers, and every agent they spawn, 
 
 Both use the same three Podman secrets: `pyrycode-github-token`, `pyrycode-claude-token`, `pyrycode-discord-webhook`. The forks share `/work` so the desktop container can index pyrycode's docs, which its roles search for cross-project lessons. Each fork has its own home, because Claude rewrites `~/.claude.json` and two containers must not share it.
 
-Containers run with `--userns=keep-id`, so they have exactly the pyry account's rights and every file they write belongs to pyry. Each may use six of the eight CPU threads and 24 GB of memory. The caps do not add up: when both pipelines run gates at once, they share the CPU.
+Containers run with `--userns=keep-id`, so they have exactly the pyry account's rights and every file they write belongs to pyry. Each may use six of the eight CPU threads; when both pipelines run gates at once, they share the CPU. Memory is capped at 16 GB for both together, by the systemd user slice `pyrycode-agents.slice` that both units run in. That leaves about half of pyrybox's 31 GB to Pyry and the system. Ad-hoc `podman run` commands sit outside the slice, so give them `--memory=16g` themselves.
 
 ## Steps
 
@@ -24,7 +24,7 @@ All commands below run on the Mac from this folder unless marked pyrybox.
 2. **Secrets:** `./push-secrets.sh`. It reads the three `op://` references from the Mac pyrycode agents repo's `.env` and stores the values as Podman secrets on pyrybox. Both forks use the same references.
 3. **Provision and smoke test** (pyrybox). The first run clones the repositories and builds the qmd and codegraph indexes on the CPU, which takes a long time. For desktop, add `-e FORK=pyrycode-desktop --shm-size=2g` and use `home-desktop` and `config-desktop`:
    ```bash
-   podman run --rm --init --userns=keep-id \
+   podman run --rm --init --userns=keep-id --memory=16g \
      -v ~/pyrycode-runtime/work:/work -v ~/pyrycode-runtime/home:/home/agent \
      -v ~/pyrycode-runtime/config:/config:ro \
      --secret pyrycode-github-token,type=env,target=GITHUB_TOKEN \
@@ -34,9 +34,10 @@ All commands below run on the Mac from this folder unless marked pyrybox.
    ```
 4. **Switch over.** Only one dispatcher may watch a board:
    1. Mac: drain that fork's dispatcher with `bin/pyry-drain` in its agents repo and wait until it exits.
-   2. pyrybox: install and start the service, shown for pyrycode; use the desktop unit name for desktop:
+   2. pyrybox: install and start the service, shown for pyrycode; use the desktop unit name for desktop. The slice is shared, so installing it again is harmless:
       ```bash
-      mkdir -p ~/.config/containers/systemd
+      mkdir -p ~/.config/containers/systemd ~/.config/systemd/user
+      cp ~/pyrycode-runtime/build/pyrycode-agents.slice ~/.config/systemd/user/
       cp ~/pyrycode-runtime/build/pyrycode-dispatcher.container ~/.config/containers/systemd/
       systemctl --user daemon-reload
       systemctl --user start pyrycode-dispatcher
