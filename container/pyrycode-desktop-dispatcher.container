@@ -1,0 +1,37 @@
+# Podman Quadlet unit: runs the pyrycode-desktop dispatcher (board 7) as a
+# systemd user service of the pyry account on pyrybox.
+#
+# Install ONLY at switch-over (README.md): once this file sits in
+# ~/.config/containers/systemd/, the dispatcher starts at every boot, and a
+# second dispatcher on the same board picks up the same tickets.
+
+[Unit]
+Description=pyrycode-desktop agent dispatcher (container)
+Wants=network-online.target
+After=network-online.target
+
+[Container]
+Image=localhost/pyrycode-agent-runtime:latest
+ContainerName=pyrycode-desktop-dispatcher
+Environment=FORK=pyrycode-desktop
+UserNS=keep-id
+RunInit=true
+Volume=%h/pyrycode-runtime/work:/work
+Volume=%h/pyrycode-runtime/home-desktop:/home/agent
+Volume=%h/pyrycode-runtime/config-desktop:/config:ro
+Secret=pyrycode-github-token,type=env,target=GITHUB_TOKEN
+Secret=pyrycode-claude-token,type=env,target=CLAUDE_CODE_OAUTH_TOKEN
+Secret=pyrycode-discord-webhook,type=env,target=DISCORD_WEBHOOK_URL
+# Chromium crashes on Podman's default 64 MB /dev/shm. A stop drains: the
+# dispatcher waits for running agents, which can take most of an hour.
+PodmanArgs=--cpus=6 --memory=24g --shm-size=2g --stop-timeout=3600
+Exec=run
+
+[Service]
+Restart=on-failure
+RestartSec=60
+TimeoutStartSec=3600
+TimeoutStopSec=3700
+
+[Install]
+WantedBy=default.target

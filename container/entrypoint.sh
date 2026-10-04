@@ -9,13 +9,18 @@
 #
 # Every step is idempotent. Only the indexes are slow, and they are built
 # once, then refreshed by the dispatcher before each agent spawn.
+#
+# FORK selects the pipeline: pyrycode (default, board 1) or
+# pyrycode-desktop (board 7). Both forks share /work, so the desktop
+# container can index pyrycode's docs; each fork has its own HOME volume.
 set -euo pipefail
 
+FORK="${FORK:-pyrycode}"
 WORK_ROOT="${WORK_ROOT:-/work/Projects}"
-TARGET="$WORK_ROOT/pyrycode"
-AGENTS="$WORK_ROOT/pyrycode-agents"
-TARGET_REPO_URL="${TARGET_REPO_URL:-https://github.com/pyrycode/pyrycode.git}"
-AGENTS_REPO_URL="${AGENTS_REPO_URL:-https://github.com/pyrycode/pyrycode-agents.git}"
+TARGET="$WORK_ROOT/$FORK"
+AGENTS="$WORK_ROOT/$FORK-agents"
+TARGET_REPO_URL="${TARGET_REPO_URL:-https://github.com/pyrycode/$FORK.git}"
+AGENTS_REPO_URL="${AGENTS_REPO_URL:-https://github.com/pyrycode/$FORK-agents.git}"
 CONFIG_ENV="${CONFIG_ENV:-/config/dispatcher.env}"
 CLAUDE_FILES=/opt/pyry-container/claude
 CODEX_FILES=/opt/pyry-container/codex
@@ -84,6 +89,12 @@ setup_repos() {
 setup_claude() {
   mkdir -p "$HOME/.claude/hooks"
   install -m 0644 "$CLAUDE_FILES/settings.json" "$HOME/.claude/settings.json"
+  if [ "$FORK" = pyrycode-desktop ]; then
+    # Desktop UI tickets need Figma. It still needs a one-time interactive
+    # OAuth login before its tools work.
+    jq '.enabledPlugins["figma@claude-plugins-official"] = true' "$HOME/.claude/settings.json" \
+      > "$HOME/.claude/settings.json.tmp" && mv "$HOME/.claude/settings.json.tmp" "$HOME/.claude/settings.json"
+  fi
   install -m 0644 "$CLAUDE_FILES/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
   install -m 0755 "$CLAUDE_FILES/hooks/gh-board-listing-guard.py" "$HOME/.claude/hooks/"
   # The real-claude test suite needs onboarding marked complete.
@@ -95,11 +106,16 @@ setup_claude() {
   claude mcp get codegraph >/dev/null 2>&1 || claude mcp add --scope user codegraph -- codegraph serve --mcp
   # context7 comes as a plugin so its tool names match the dispatcher's
   # allowlist. Agents still work without it, so a failure only warns.
-  if ! claude plugin list 2>/dev/null | grep -q 'context7@claude-plugins-official'; then
-    { claude plugin marketplace add anthropics/claude-plugins-official \
-        && claude plugin install context7@claude-plugins-official; } >/dev/null 2>&1 \
-      || log "context7 plugin install failed; agents run without context7"
-  fi
+  local plugins=context7 plugin
+  [ "$FORK" = pyrycode-desktop ] && plugins="context7 figma"
+  for plugin in $plugins; do
+    if ! claude plugin list 2>/dev/null | grep -q "$plugin@claude-plugins-official"; then
+      { claude plugin marketplace list 2>/dev/null | grep -q claude-plugins-official \
+          || claude plugin marketplace add anthropics/claude-plugins-official; } >/dev/null 2>&1
+      claude plugin install "$plugin@claude-plugins-official" >/dev/null 2>&1 \
+        || log "$plugin plugin install failed; agents run without $plugin"
+    fi
+  done
 }
 
 setup_codex() {
@@ -114,7 +130,25 @@ setup_indexes() {
   [ -f "$INDEX_STAMP" ] && return 0
   log "first run: building the qmd and codegraph indexes (slow on this CPU)"
   mkdir -p "$HOME/.config/qmd"
-  cat > "$HOME/.config/qmd/index.yml" <<EOF
+  write_qmd_config > "$HOME/.config/qmd/index.yml"
+  # qmd embed stops itself after a session limit on this CPU; the
+  # dispatcher's per-spawn `qmd embed` finishes whatever is left.
+  (cd "$TARGET" && qmd update && qmd embed) || log "qmd embed incomplete; continuing"
+  # Some repos track .codegraph/config.json, so test for the database.
+  if [ ! -f "$TARGET/.codegraph/codegraph.db" ]; then
+    if [ -d "$TARGET/.codegraph" ]; then
+      (cd "$TARGET" && codegraph index)
+    else
+      (cd "$TARGET" && codegraph init -i)
+    fi
+  fi
+  date -u +%Y-%m-%dT%H:%M:%SZ > "$INDEX_STAMP"
+}
+
+write_qmd_config() {
+  case "$FORK" in
+    pyrycode)
+      cat <<EOF
 collections:
   pyrycode-docs:
     path: $TARGET/docs
@@ -123,11 +157,41 @@ collections:
     path: $TARGET
     pattern: "**/*.md"
 EOF
-  (cd "$TARGET" && qmd update && qmd embed)
-  if [ ! -d "$TARGET/.codegraph" ]; then
-    (cd "$TARGET" && codegraph init -i)
+      ;;
+    pyrycode-desktop)
+      # Desktop roles also search pyrycode-docs for cross-project lessons.
+      # Read the shared checkout the pyrycode container keeps; clone it
+      # only if that container has never run.
+      local core="$WORK_ROOT/pyrycode"
+      [ -d "$core/.git" ] || git clone --quiet https://github.com/pyrycode/pyrycode.git "$core"
+      cat <<EOF
+collections:
+  pyrycode-desktop-docs:
+    path: $TARGET/docs
+    pattern: "**/*.md"
+    context:
+      "": "Pyrycode Desktop documentation: package overviews under features/, architecture specs, ADRs, and the frozen per-ticket notes under codebase/"
+  pyrycode-docs:
+    path: $core/docs
+    pattern: "**/*.md"
+EOF
+      ;;
+    *) log "no qmd collections defined for FORK=$FORK"; exit 1 ;;
+  esac
+}
+
+start_display() {
+  # Electron needs an X display even with hidden windows. Gates and agents
+  # inherit DISPLAY from the dispatcher.
+  [ "$FORK" = pyrycode-desktop ] || return 0
+  export DISPLAY="${DISPLAY:-:99}"
+  if [ ! -S "/tmp/.X11-unix/X${DISPLAY#:}" ]; then
+    Xvfb "$DISPLAY" -screen 0 1920x1080x24 -nolisten tcp >/tmp/xvfb.log 2>&1 &
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+      [ -S "/tmp/.X11-unix/X${DISPLAY#:}" ] && break
+      sleep 0.5
+    done
   fi
-  date -u +%Y-%m-%dT%H:%M:%SZ > "$INDEX_STAMP"
 }
 
 setup() {
@@ -164,6 +228,12 @@ case "${1:-run}" in
   check) check ;;
   setup) setup ;;
   smoke) smoke ;;
+  shell)
+    # Debugging aid: a shell with the fork's display running.
+    shift || true
+    start_display
+    exec bash "$@"
+    ;;
   codex-login)
     setup_codex
     codex login --device-auth
@@ -171,6 +241,7 @@ case "${1:-run}" in
   run)
     shift || true
     setup
+    start_display
     export TARGET_REPO_PATH="$TARGET"
     exec "$AGENTS/bin/pyry-start" "$@"
     ;;
