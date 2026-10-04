@@ -109,7 +109,7 @@ systemctl --user enable --now pyrycode-qmd-refresh.timer
 journalctl --user -u pyrycode-qmd-refresh
 ```
 
-The service runs the script from the live checkout, so a merged change to it needs no reinstall. The desktop container's own copy of `pyrycode-docs` is still refreshed only by its dispatcher before each spawn.
+The service runs the script from the live checkout, so a merged change to it needs no reinstall. Because of it, `forks/pyrycode.env` sets `PYRY_SKIP_QMD_REFRESH=1`, so the pyrycode dispatcher no longer runs its own `qmd update && qmd embed` before each spawn (agent-dispatcher#115). The desktop container's own copy of `pyrycode-docs` is still refreshed only by its dispatcher before each spawn.
 
 ## Updating
 
