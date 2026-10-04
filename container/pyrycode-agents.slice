@@ -1,0 +1,11 @@
+# systemd user slice shared by the pyrycode agent containers on pyrybox.
+# Both Quadlet units run inside it, so their memory together never exceeds
+# 16 GB, whichever of them is busy. That leaves about half of pyrybox's
+# 31 GB for Pyry and the system. Install with the units at switch-over:
+# copy to ~/.config/systemd/user/ and run `systemctl --user daemon-reload`.
+
+[Unit]
+Description=Memory cap shared by the pyrycode agent containers
+
+[Slice]
+MemoryMax=16G

@@ -1,0 +1,115 @@
+# Runtime image for the pyrycode and pyrycode-desktop agent dispatchers on Linux.
+#
+# Built and run with rootless Podman on pyrybox; any OCI engine builds it.
+# Build context is this directory. See README.md for build, secrets and
+# switch-over. Versions are pinned to what the Mac dispatcher ran on
+# 2026-10-03; bump them here, never by letting a tool self-update.
+FROM docker.io/library/ubuntu:24.04
+
+ARG GO_VERSION=1.26.2
+ARG NODE_VERSION=25.8.0
+ARG PNPM_VERSION=10.32.1
+ARG GH_VERSION=2.88.1
+ARG CLAUDE_VERSION=2.1.280
+ARG PYRY_VERSION=v0.31.1
+ARG QMD_VERSION=2.1.0
+ARG CODEGRAPH_VERSION=0.6.8
+ARG STATICCHECK_VERSION=2026.1
+ARG CODEX_VERSION=0.159.2
+# Desktop fork only: the Chromium its static visual capture launches.
+# Match the target repo's locked @playwright/test version.
+ARG PLAYWRIGHT_VERSION=1.61.1
+
+# gcc and libc6-dev: `go test -race` needs cgo. g++: codegraph's native
+# SQLite module compiles at npm install; without it codegraph falls back to
+# a slower WASM build. perl: bin/pyry-start's process-group step.
+# bsdextrautils: `column`, which role docs use.
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      bash bsdextrautils ca-certificates curl g++ gcc git jq libc6-dev make \
+      perl procps python3 xz-utils \
+ && rm -rf /var/lib/apt/lists/*
+
+# Desktop fork: Electron needs an X display even with hidden windows, so the
+# entrypoint starts Xvfb. These are Electron's runtime libraries on Ubuntu
+# 24.04 and fonts for layout-sensitive specs (the app asks for Roboto).
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      xvfb xauth dbus \
+      libnss3 libnspr4 libatk1.0-0t64 libatk-bridge2.0-0t64 libcups2t64 libdrm2 \
+      libgbm1 libgtk-3-0t64 libasound2t64 libxcomposite1 libxdamage1 libxrandr2 \
+      libxkbcommon0 libpango-1.0-0 libcairo2 libx11-xcb1 libxshmfence1 libdbus-1-3 \
+      libxtst6 libxss1 \
+      fonts-dejavu-core fonts-liberation fonts-roboto \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" \
+      | tar -C /usr/local -xz
+RUN curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
+      | tar -C /usr/local --strip-components=1 -xJ
+RUN curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" \
+      | tar -C /usr/local --strip-components=1 -xz
+
+RUN npm install -g --no-fund --no-audit \
+      "pnpm@${PNPM_VERSION}" \
+      "@tobilu/qmd@${QMD_VERSION}" \
+      "@colbymchenry/codegraph@${CODEGRAPH_VERSION}" \
+      "@openai/codex@${CODEX_VERSION}"
+
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+RUN npx -y "playwright@${PLAYWRIGHT_VERSION}" install --with-deps chromium \
+ && chmod -R a+rX /opt/ms-playwright \
+ && rm -rf /var/lib/apt/lists/* /root/.npm
+
+# The native installer writes to $HOME; copy the single binary out so the
+# runtime user, whose home is a mounted volume, finds it on PATH.
+RUN HOME=/tmp/claude-install bash -c \
+      "curl -fsSL https://claude.ai/install.sh | bash -s ${CLAUDE_VERSION}" \
+ && install -m 0755 "$(readlink -f /tmp/claude-install/.local/bin/claude)" /usr/local/bin/claude \
+ && rm -rf /tmp/claude-install
+
+# pyry runs each agent (`pyry agent-run`). staticcheck is pre-installed so
+# `make check` never tries to `go install` it into a read-only path.
+RUN GOPATH=/tmp/gopath GOBIN=/usr/local/bin GOTOOLCHAIN=local GOFLAGS=-modcacherw \
+      /usr/local/go/bin/go install -ldflags "-X main.Version=${PYRY_VERSION#v}" \
+        "github.com/pyrycode/pyrycode/cmd/pyry@${PYRY_VERSION}" \
+ && GOPATH=/tmp/gopath GOBIN=/usr/local/bin GOTOOLCHAIN=local GOFLAGS=-modcacherw \
+      /usr/local/go/bin/go install "honnef.co/go/tools/cmd/staticcheck@${STATICCHECK_VERSION}" \
+ && rm -rf /tmp/gopath /root/.cache
+
+COPY user-files/board-cards /usr/local/bin/board-cards
+COPY user-files/claude/ /opt/pyry-container/claude/
+COPY user-files/codex/ /opt/pyry-container/codex/
+COPY user-files/codex-bin/ /opt/codex-helpers/
+COPY automation-access-shim /usr/local/bin/automation-access-shim
+COPY entrypoint.sh /usr/local/bin/pyry-container
+RUN chmod 0755 /usr/local/bin/board-cards /usr/local/bin/automation-access-shim \
+      /usr/local/bin/pyry-container /opt/pyry-container/claude/hooks/gh-board-listing-guard.py \
+      /opt/codex-helpers/*
+
+# Codex runner: the agents' working-practice docs call the Mac's Codex helpers by
+# absolute path, because Codex's approval rules match on exact paths. Recreate those
+# paths here instead of forking the docs. The helpers resolve the repository path, so
+# a link to /work works. They open the publish folder without following links, so
+# that folder and its parents must be real directories. The publish folder is
+# writable and sticky, and lives only for the container's lifetime.
+RUN mkdir -p /opt/homebrew/bin /Users/juhanailmoniemi/Workspace /Users/juhanailmoniemi/.codex/publish \
+ && ln -s /usr/local/bin/gh /opt/homebrew/bin/gh \
+ && ln -s /usr/local/bin/node /opt/homebrew/bin/node \
+ && ln -s /work/Projects /Users/juhanailmoniemi/Workspace/Projects \
+ && ln -s /opt/codex-helpers /Users/juhanailmoniemi/.codex/bin \
+ && chmod 1777 /Users/juhanailmoniemi/.codex/publish
+
+# HOME is a mounted volume (Claude state, transcripts, Go caches, qmd
+# index), so it survives image rebuilds. /work holds the two repositories
+# and the worktree folder beside them.
+ENV HOME=/home/agent \
+    SHELL=/bin/bash \
+    GOTOOLCHAIN=local \
+    DISABLE_AUTOUPDATER=1 \
+    PYRY_AUTOMATION_ACCESS=/usr/local/bin/automation-access-shim \
+    PATH=/home/agent/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+WORKDIR /work
+ENTRYPOINT ["/usr/local/bin/pyry-container"]
+CMD ["run"]
