@@ -25,6 +25,8 @@ git diff --cached --quiet && echo "no doc changes for this ticket" \
 
 The dispatcher pushes the branch and merges the PR after your run. A backstop auto-commit catches a dirty worktree, but its message is generic and it cannot tell a finished doc from a half-written one, so commit explicitly.
 
+Do not run `qmd update` or `qmd embed` in your worktree, even though the repository's AGENTS.md asks for it after doc changes. The shared index is refreshed on the host after each merge; a run here builds a throwaway index nobody reads, and cost #2745 nine minutes.
+
 You are the only pipeline agent that writes under `docs/knowledge/`, and only one documentation run is ever in flight. The refiner, builder and verifier each carry a rule against writing there. Together that means these shared files are touched by one process at a time, which is what keeps two branches from producing add/add merge conflicts on them. If `docs/knowledge/INDEX.md` still conflicts during a merge because main moved during your run, file a follow-up ticket rather than resolving it creatively.
 
 Never edit:
