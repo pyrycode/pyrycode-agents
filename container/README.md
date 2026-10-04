@@ -51,7 +51,7 @@ All commands below run on the Mac from this folder unless marked pyrybox.
 - **Shared memory:** Chromium crashes on Podman's default 64 MB `/dev/shm`, so the desktop unit sets `--shm-size=2g`.
 - **Chromium for the static visual capture** comes from Playwright, in `/opt/ms-playwright`. `PLAYWRIGHT_VERSION` in the `Containerfile` must match the desktop repo's locked `@playwright/test`. Electron itself is downloaded by `npm install` into `~/.cache/electron`.
 - **Daemon for the real-claude specs:** `PYRY_BIN` is the image's pinned pyry. On the Mac it was a hand-built v0.29.0.
-- **Figma:** desktop UI tickets need it, and the builder stops a UI ticket as blocked without it. The plugin is installed, but it needs a one-time interactive OAuth login before its tools work. Not solved yet.
+- **Figma:** desktop UI tickets need it; the builder stops a UI ticket as blocked without it. Codex in the desktop container reads Figma since 2026-10-04: `user-files/codex/figma.toml` is appended to the desktop fork's Codex config only, and the OAuth login is stored in `home-desktop/.codex/.credentials.json`. Verified with the dispatcher's own Codex arguments: `whoami` and `get_metadata` on the design file both worked. To sign in again, on pyrybox run `codex mcp login figma` in a desktop container with `--network=host`. The callback port is fixed at 18765 in the Codex config. From the Mac, run `ssh -N -L 127.0.0.1:18765:127.0.0.1:18765 pyrybox` through the Automation key. Then open the printed link in the Mac's browser. Never use `--no-browser`: it asks for the callback URL, which carries a one-time code, to be pasted. The Claude runner's Figma plugin is not signed in; sign it in only if the desktop fork goes back to Claude.
 
 ## Codex runner
 

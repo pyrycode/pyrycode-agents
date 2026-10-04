@@ -127,6 +127,7 @@ setup_codex() {
   # `pyry-container codex-login`. Settings are rewritten on every start.
   mkdir -p "$HOME/.codex"
   install -m 0600 "$CODEX_FILES/config.toml" "$HOME/.codex/config.toml"
+  [ "$FORK" = pyrycode-desktop ] && cat "$CODEX_FILES/figma.toml" >> "$HOME/.codex/config.toml"
   install -m 0644 "$CLAUDE_FILES/CLAUDE.md" "$HOME/.codex/AGENTS.md"
   # The Codex helpers only read body files from this fork's publish folder.
   mkdir -p -m 0700 "/Users/juhanailmoniemi/.codex/publish/$FORK"
