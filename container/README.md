@@ -21,7 +21,7 @@ Containers run with `--userns=keep-id`, so they have exactly the pyry account's 
 All commands below run on the Mac from this folder unless marked pyrybox.
 
 1. **Build:** `./deploy.sh`. It copies this folder, installs both settings files, builds the image and prints tool versions. It starts nothing.
-2. **Secrets:** `./push-secrets.sh`. It reads the three `op://` references from the Mac pyrycode agents repo's `.env` and stores the values as Podman secrets on pyrybox. Both forks use the same references.
+2. **Secrets:** `./push-secrets.sh`. The GitHub token comes from its own 1Password item, scoped to this container (Automation vault, item "GitHub pyrybox container token"), not from the Mac dispatchers' `.env`. The other two secrets' `op://` references are still read from the Mac pyrycode agents repo's `.env`. Both forks use the same references.
 3. **Provision and smoke test** (pyrybox). The first run clones the repositories and builds the qmd and codegraph indexes on the CPU, which takes a long time. For desktop, add `-e FORK=pyrycode-desktop --shm-size=2g` and use `home-desktop` and `config-desktop`:
    ```bash
    podman run --rm --init --userns=keep-id --memory=16g \
@@ -92,7 +92,7 @@ Verified 2026-10-04 in both containers: Codex answered a prompt, `gh` reached Gi
 ## How it differs from the Mac
 
 - **Secrets** come from Podman secrets, not from `op run`. `automation-access-shim` stands in for the 1Password helper so `bin/pyry-start` runs unchanged. The dispatcher loads `.env` itself.
-- **Agents' GitHub login** is the dispatcher's token, passed as `GH_TOKEN`, which the dispatcher does not scrub from agent environments. git pushes through gh's credential helper. On the Mac, agents used the personal login in the Keychain. No login is stored on disk. The token cannot be stored as a gh login anyway, because it lacks the `read:org` scope that `gh auth login` validates.
+- **Agents' GitHub login** is the dispatcher's token, passed as `GH_TOKEN`, which the dispatcher does not scrub from agent environments. git pushes through gh's credential helper. On the Mac, agents used the personal login in the Keychain. No login is stored on disk. The token carries the `read:org` scope among others, but it is still passed only as `GH_TOKEN`, never stored through `gh auth login`.
 - **Secrets at rest:** Podman keeps secrets as plain files under the pyry account's home, so Pyry can read them. Accepted on 2026-10-04 as temporary; a safer arrangement is still open.
 - **qmd** indexes only the fork's own docs, plus `pyrycode-docs` for desktop. On the Mac, agents could also search the personal vault and the other forks' docs.
 - **User-level Claude files** are copies in `user-files/`: the shared git policy as `CLAUDE.md`, the `gh project item-list` guard hook, and `board-cards`. When the Mac originals change, update the copies and rebuild.
