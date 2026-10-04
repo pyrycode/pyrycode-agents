@@ -37,3 +37,12 @@ approval_mode = "approve"
 
 [projects."/work/Projects/pyrycode"]
 trust_level = "trusted"
+
+# The dispatcher passes `-c mcp_servers.meshy.enabled=false` to every Codex run,
+# because the Mac's config defines a Meshy server. Without an entry here that
+# override creates a server with no command or URL, and Codex refuses to start:
+# "Error loading config.toml: invalid transport". That failed every agent run on
+# 2026-10-04 at 17:02 and put an error label on eight tickets.
+[mcp_servers.meshy]
+command = "true"
+enabled = false
