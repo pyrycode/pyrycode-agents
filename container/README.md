@@ -97,6 +97,19 @@ Verified 2026-10-04 in both containers: Codex answered a prompt, `gh` reached Gi
 - **qmd** indexes only the fork's own docs, plus `pyrycode-docs` for desktop. On the Mac, agents could also search the personal vault and the other forks' docs.
 - **User-level Claude files** are copies in `user-files/`: the shared git policy as `CLAUDE.md`, the `gh project item-list` guard hook, and `board-cards`. When the Mac originals change, update the copies and rebuild.
 
+## qmd index refresh
+
+`pyrycode-qmd-refresh.timer` checks every five minutes whether the pyrycode checkout's commit differs from the one last indexed, stored in `~/pyrycode-runtime/qmd-indexed-commit`. When it does, `pyrycode-qmd-refresh.sh` runs `qmd update` and repeats `qmd embed` inside the running dispatcher container until nothing is pending, then updates the stamp. Otherwise it does nothing. It only reads the checkout: the dispatcher fast-forwards it after each merge. Added 2026-10-04 so the documentation agent no longer rebuilds an index in its worktree. Install on pyrybox from the live agents checkout:
+
+```bash
+cp ~/pyrycode-runtime/work/Projects/pyrycode-agents/container/pyrycode-qmd-refresh.{service,timer} ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now pyrycode-qmd-refresh.timer
+journalctl --user -u pyrycode-qmd-refresh
+```
+
+The service runs the script from the live checkout, so a merged change to it needs no reinstall. The desktop container's own copy of `pyrycode-docs` is still refreshed only by its dispatcher before each spawn.
+
 ## Updating
 
 - **Role instructions:** the entrypoint fast-forwards the agents checkout on every start, so a restart picks up merged changes to `main`.

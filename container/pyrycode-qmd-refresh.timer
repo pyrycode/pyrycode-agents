@@ -1,0 +1,13 @@
+# systemd user timer on pyrybox. Checks every five minutes whether pyrycode
+# main has moved on; the service is idle when it has not. systemd never
+# starts the service again while a run is still going.
+
+[Unit]
+Description=Check every five minutes whether the pyrycode qmd index is behind main
+
+[Timer]
+OnCalendar=*:0/5
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target
