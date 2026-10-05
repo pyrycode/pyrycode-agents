@@ -12,7 +12,7 @@ Runs the pyrycode and pyrycode-desktop dispatchers, and every agent they spawn, 
 | Settings | `config/dispatcher.env`, from `forks/pyrycode.env` | `config-desktop/dispatcher.env`, from `forks/pyrycode-desktop.env` |
 | Service | `pyrycode-dispatcher.container` | `pyrycode-desktop-dispatcher.container` |
 
-Both use the same three Podman secrets: `pyrycode-github-token`, `pyrycode-claude-token`, `pyrycode-discord-webhook`. The forks share `/work` so the desktop container can index pyrycode's docs, which its roles search for cross-project lessons. Each fork has its own home, because Claude rewrites `~/.claude.json` and two containers must not share it.
+Both use the same four Podman secrets: `pyrycode-github-token`, `pyrycode-claude-token`, `pyrycode-discord-webhook` and `pyrycode-dev-agents-token`. The forks share `/work` so the desktop container can index pyrycode's docs, which its roles search for cross-project lessons. Each fork has its own home, because Claude rewrites `~/.claude.json` and two containers must not share it.
 
 Containers run with `--userns=keep-id`, so they have exactly the pyry account's rights and every file they write belongs to pyry. Each may use six of the eight CPU threads; when both pipelines run gates at once, they share the CPU. Memory is capped at 16 GB for both together, by the systemd user slice `pyrycode-agents.slice` that both units run in. That leaves about half of pyrybox's 31 GB to Pyry and the system. Ad-hoc `podman run` commands sit outside the slice, so give them `--memory=16g` themselves.
 
@@ -21,7 +21,7 @@ Containers run with `--userns=keep-id`, so they have exactly the pyry account's 
 All commands below run on the Mac from this folder unless marked pyrybox.
 
 1. **Build:** `./deploy.sh`. It copies this folder, installs both settings files, builds the image and prints tool versions. It starts nothing.
-2. **Secrets:** `./push-secrets.sh`. The GitHub token comes from its own 1Password item, scoped to this container (Automation vault, item "GitHub pyrybox container token"), not from the Mac dispatchers' `.env`. The other two secrets' `op://` references are still read from the Mac pyrycode agents repo's `.env`. Both forks use the same references.
+2. **Secrets:** `./push-secrets.sh`. The GitHub token comes from its own 1Password item, scoped to this container (Automation vault, item "GitHub pyrybox container token"), not from the Mac dispatchers' `.env`. The other three secrets' `op://` references are still read from the Mac pyrycode agents repo's `.env`. Both forks use the same references.
 3. **Provision and smoke test** (pyrybox). The first run clones the repositories and builds the qmd and codegraph indexes on the CPU, which takes a long time. For desktop, add `-e FORK=pyrycode-desktop --shm-size=2g` and use `home-desktop` and `config-desktop`:
    ```bash
    podman run --rm --init --userns=keep-id --memory=16g \
@@ -115,3 +115,9 @@ The service runs the script from the live checkout, so a merged change to it nee
 
 - **Role instructions:** the entrypoint fast-forwards the agents checkout on every start, so a restart picks up merged changes to `main`.
 - **Tool versions:** change the `ARG` lines in `Containerfile`, run `./deploy.sh`, then on pyrybox restart each running service.
+
+## Builder live repairs
+
+`pyrycode-dev-agents-token` arrives as `PYRY_DEV_AGENTS_TOKEN`. It is the separate service account that reads only the Dev agents vault. The dispatcher gives it only to builders as `OP_SERVICE_ACCOUNT_TOKEN`. The main Automation account never enters the container. The image includes the 1Password CLI so the targeted test launcher can fetch the Claude login in memory. Account credentials are removed from the test child after the fetch.
+
+Add the restricted account reference to the Mac agents settings before running `push-secrets.sh`. Rebuild the image and install both updated container definitions. Restart each service once through systemd and wait for its graceful drain. Do not send a second stop signal. Confirm the restricted account is set by name only. Record a builder's nonzero executed and passed counts after rollout.

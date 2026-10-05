@@ -77,6 +77,13 @@ RUN GOPATH=/tmp/gopath GOBIN=/usr/local/bin GOTOOLCHAIN=local GOFLAGS=-modcacher
       /usr/local/go/bin/go install "honnef.co/go/tools/cmd/staticcheck@${STATICCHECK_VERSION}" \
  && rm -rf /tmp/gopath /root/.cache
 
+ARG OP_VERSION=2.34.0
+# 1Password is used only with the restricted Dev Agents account in test children.
+RUN curl -fsSL "https://cache.agilebits.com/dist/1P/op2/pkg/v${OP_VERSION}/op_linux_amd64_v${OP_VERSION}.zip" -o /tmp/op.zip \
+ && python3 -m zipfile -e /tmp/op.zip /tmp/op-cli \
+ && install -m 0755 /tmp/op-cli/op /usr/local/bin/op \
+ && rm -rf /tmp/op.zip /tmp/op-cli
+
 COPY user-files/board-cards /usr/local/bin/board-cards
 COPY user-files/claude/ /opt/pyry-container/claude/
 COPY user-files/codex/ /opt/pyry-container/codex/

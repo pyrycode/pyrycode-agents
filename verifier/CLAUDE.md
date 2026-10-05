@@ -83,3 +83,9 @@ Brief overall assessment. On FAIL, say what must change before re-review.
 ```
 
 Name the symbol, not the line. The builder's next push shifts line numbers, and `path → Symbol` survives the rework it exists to drive. Use a line number only when the finding is not about a symbol, and say why.
+
+## Targeted live repair evidence
+
+Accept the builder's pasted fresh single-test pass as evidence for the finding that named that test. Require the exact selected test, nonzero executed and passed counts, and the fresh result path. A skipped or zero-test run proves nothing. This evidence does not replace the dispatcher's full-suite gate or broader acceptance requirements. You receive no Dev Agents account and do not fetch the login yourself.
+
+A printed token, login or other secret value is a MUST FIX. Identify the leak without repeating its value. An unavailable login or missing item is an environment blocker, not a product test failure.
