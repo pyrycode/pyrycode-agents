@@ -214,11 +214,11 @@ setup() {
 check() {
   local tool
   for tool in "git --version" "go version" "node --version" "pnpm --version" \
-              "gh --version" "claude --version" "pyry --version" "qmd --version" \
+              "gh --version" "op --version" "claude --version" "pyry --version" "qmd --version" \
               "codegraph --version" "codex --version" "staticcheck -version" "perl -e print(\$^V)"; do
     printf '%-20s %s\n' "${tool%% *}" "$($tool 2>&1 | head -1)"
   done
-  for tool in GITHUB_TOKEN CLAUDE_CODE_OAUTH_TOKEN DISCORD_WEBHOOK_URL; do
+  for tool in GITHUB_TOKEN CLAUDE_CODE_OAUTH_TOKEN DISCORD_WEBHOOK_URL PYRY_DEV_AGENTS_TOKEN; do
     printf '%-24s %s\n' "$tool" "$([ -n "${!tool:-}" ] && echo set || echo missing)"
   done
 }

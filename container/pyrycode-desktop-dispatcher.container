@@ -21,6 +21,7 @@ Volume=%h/pyrycode-runtime/home-desktop:/home/agent
 Volume=%h/pyrycode-runtime/config-desktop:/config:ro
 Secret=pyrycode-github-token,type=env,target=GITHUB_TOKEN
 Secret=pyrycode-claude-token,type=env,target=CLAUDE_CODE_OAUTH_TOKEN
+Secret=pyrycode-dev-agents-token,type=env,target=PYRY_DEV_AGENTS_TOKEN
 Secret=pyrycode-discord-webhook,type=env,target=DISCORD_WEBHOOK_URL
 # Chromium crashes on Podman's default 64 MB /dev/shm. A stop drains: the
 # dispatcher waits for running agents, which can take most of an hour.

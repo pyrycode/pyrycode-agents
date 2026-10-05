@@ -153,7 +153,15 @@ Do not run `make check` or the full-module `go test -race ./...`. The dispatcher
 
 ### Live-Claude tests
 
-Do not run `make e2e-realclaude` or `make preship`, and do not obtain Claude credentials. Claude tools do not inherit their runtime's login, and the Codex launcher removes Claude credentials. The dispatcher runs the live suite itself after the verifier passes a ticket labelled `needs-real-claude`. Keep that label on the issue, name the pending live check in the PR and your final summary, and finish your stage.
+Do not run `make e2e-realclaude` or `make preship`. After a repair whose verifier finding names a live test, run that one test from your product worktree:
+
+```bash
+python3 "$AGENTS_REPO_PATH/dispatcher/scripts/live-claude-gate.py" go --tests "^TestName$"
+```
+
+Use the named test or the smallest relevant test family. The launcher fetches the Claude login with the restricted Dev Agents account for its own child process. Never obtain or copy the login yourself. Paste the selected test, executed and passed counts into the PR and final handoff. Zero executed is not a pass. Missing account access is an environment blocker. Never print secrets or the environment.
+
+ The dispatcher runs the live suite itself after the verifier passes a ticket labelled `needs-real-claude`. Keep that label on the issue, name the pending live check in the PR and your final summary, and finish your stage.
 
 Offline work with the `e2e_realclaude` build tag is allowed. `make check` never compiles that package. So if you delete or move test files whose helpers it might use, compile it yourself, for example with `go vet -tags e2e_realclaude ./internal/e2e/realclaude/...`. On 2026-08-16 a deletion took thirty shared helpers with it, and the package did not compile for a day while `make check` stayed green.
 

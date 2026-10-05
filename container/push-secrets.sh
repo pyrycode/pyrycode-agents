@@ -1,12 +1,12 @@
 #!/bin/bash
-# Run on the Mac. Copies the dispatcher's three secrets from 1Password's
+# Run on the Mac. Copies the dispatcher's four secrets from 1Password's
 # Automation vault into Podman secrets on pyrybox, replacing any old value.
 #
 #   container/push-secrets.sh [path/to/agents/.env]
 #
 # The GitHub token has its own 1Password item, scoped to this container
 # (Automation vault, item "GitHub pyrybox container token"), since it is not
-# shared with the Mac dispatchers. The other two op:// references are read
+# shared with the Mac dispatchers. The other three op:// references are read
 # from the Mac agents repo's .env. Each value travels from `op read` to
 # `podman secret create` over stdin only: never as an argument, never in a
 # file on the Mac, never on this terminal.
@@ -47,3 +47,4 @@ push() {
 push_ref pyrycode-github-token "$GITHUB_TOKEN_REF"
 push pyrycode-claude-token CLAUDE_CODE_OAUTH_TOKEN
 push pyrycode-discord-webhook DISCORD_WEBHOOK_URL
+push pyrycode-dev-agents-token PYRY_DEV_AGENTS_TOKEN
