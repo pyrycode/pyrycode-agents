@@ -143,11 +143,9 @@ setup_indexes() {
   (cd "$TARGET" && qmd update && qmd embed) || log "qmd embed incomplete; continuing"
   # Some repos track .codegraph/config.json, so test for the database.
   if [ ! -f "$TARGET/.codegraph/codegraph.db" ]; then
-    if [ -d "$TARGET/.codegraph" ]; then
-      (cd "$TARGET" && codegraph index)
-    else
-      (cd "$TARGET" && codegraph init -i)
-    fi
+    # init preserves an existing config and creates the missing database.
+    # index requires that database, even when the directory already exists.
+    (cd "$TARGET" && codegraph init -i)
   fi
   date -u +%Y-%m-%dT%H:%M:%SZ > "$INDEX_STAMP"
 }
