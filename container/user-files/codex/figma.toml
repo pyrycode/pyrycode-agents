@@ -3,5 +3,13 @@
 # as blocked without Figma. The login is a one-time OAuth sign-in stored in
 # the desktop home volume (README, Figma). Not given to the pyrycode fork,
 # whose agents do not use Figma and whose home has no Figma login.
+#
+# Codex's default MCP startup timeout is 10 seconds, which Figma sometimes
+# misses, letting the run start without Figma tools instead of failing loudly.
+# `required = true` makes a failed connection stop the run at once with a
+# clear error instead; `startup_timeout_sec = 60` gives Figma the extra time
+# it occasionally needs. Approved by Juhana Ilmoniemi, 2026-10-06.
 [mcp_servers.figma]
 url = "https://mcp.figma.com/mcp"
+startup_timeout_sec = 60
+required = true
