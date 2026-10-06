@@ -208,6 +208,8 @@ gh api graphql -f query='mutation($issueId: ID!, $blockingIssueId: ID!) {
 
 A PR's node ID works the same way, from `gh pr view <THAT> --json id -q '.id'`. Under Codex, use `add-blocker ISSUE BLOCKER` instead. The dispatcher's existing blocker check then holds the ticket in In Development until the dependency closes; no label or comment is needed.
 
+When this ticket continues another ticket's open PR, for example a split child inheriting the parent's PR, never tell the builder to keep committing to that PR's branch: the dispatcher only checks `feature/<this ticket>` for commits. Tell it to start this ticket's own branch from the other branch's head and open a fresh PR that closes this ticket, so the old PR can be closed as superseded. On 2026-10-06, #2881 continued PR #2875 on `feature/2873`, and the dispatcher flagged a false `error:builder` because `feature/2881` was empty.
+
 Evidence: pyrycode-mobile #1769 and #1765 found their blocker two to three minutes into the builder run on 2026-10-06; pyrycode-desktop #1766 found mid-run that open PR #1792 already fixed the same thing. Catching it here costs a search instead of a run.
 
 ## Rework
