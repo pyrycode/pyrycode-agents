@@ -49,6 +49,10 @@ Every dispatcher, agent and interactive session shares one GitHub account and it
 
 The pipeline is non-interactive, so a question reaches no one. When the dispatcher or Codex approval review denies an operation, such as a hard reset, a force push or a delete outside the worktree, do not try another form of it, even when it looks safe. The allowlist is the source of truth. Under Claude, send one message naming the denied operation and what you were trying to achieve, then end the turn; the dispatcher records `error:<agent>:permission_denied` and routes the ticket to the operator. Under Codex, return status blocked. A denial that came before this run needs operator review before the action is tried again. Pyrycode #398 lost its work by retrying and prompting an absent operator.
 
+## When an MCP or plugin tool is missing
+
+If a tool you need from an MCP server or plugin, such as Figma, is missing from your tools or fails to connect, stop at once. Do no further work and do not look for a workaround. End your final message with this line, naming the server or plugin, as its very last line: `TOOL_UNAVAILABLE: <server or plugin name>`, for example `TOOL_UNAVAILABLE: figma`. Under Codex, return status `blocked` with that line last in the summary. The dispatcher retries the run a few times, then parks the ticket. This covers only a tool that is missing or cannot be reached. A tool that answers with an error, for example for a bad argument or a node that does not exist, is not this case. Neither is a tool your instructions give a fallback for, such as command-line search when a search tool is unavailable.
+
 ## Codex on the MacBook
 
 This section applies only when you run under Codex. Juhana approved these operations on 2026-09-11. They grant permission only; they do not change which role owns which action. A builder still returns its structured refinement outcome, and the dispatcher still applies completion labels. Each helper fixes the repository to `pyrycode/pyrycode`. New Codex processes load the matching allow rules, so a rules change needs a fresh process.
