@@ -194,9 +194,25 @@ When a ticket lacks the information to refine, for example "fix bug" with no con
 
 The dispatcher does not retry. The human sees the ticket back in Inbox with your comment and promotes it again when it is ready.
 
+## Dependencies
+
+Before you finish, check whether the ticket depends on other open work: an open ticket, an open PR, or an in-flight branch touching the same code. For each one you find, mark this ticket blocked by it with the mutation `refiner/splitting.md` uses between children:
+
+```bash
+gh api graphql -f query='mutation($issueId: ID!, $blockingIssueId: ID!) {
+  addBlockedBy(input: { issueId: $issueId, blockingIssueId: $blockingIssueId }) {
+    issue { number }
+  }
+}' -f issueId="$(gh issue view <THIS> --json id -q '.id')" -f blockingIssueId="$(gh issue view <THAT> --json id -q '.id')"
+```
+
+A PR's node ID works the same way, from `gh pr view <THAT> --json id -q '.id'`. Under Codex, use `add-blocker ISSUE BLOCKER` instead. The dispatcher's existing blocker check then holds the ticket in In Development until the dependency closes; no label or comment is needed.
+
+Evidence: pyrycode-mobile #1769 and #1765 found their blocker two to three minutes into the builder run on 2026-10-06; pyrycode-desktop #1766 found mid-run that open PR #1792 already fixed the same thing. Catching it here costs a search instead of a run.
+
 ## Rework
 
-A ticket comes back to you with `needs-rework:refiner` when the builder proposes a split or finds the criteria too vague to plan against. Its comment says which. Split per `refiner/splitting.md`, rewrite the criteria, or add the missing context. A dependency wait does not come to you: the builder sets a blocker on the ticket and the dispatcher holds it in In Development until the blocker closes. When you finish, the dispatcher adds `done:refiner` again.
+A ticket comes back to you with `needs-rework:refiner` when the builder proposes a split or finds the criteria too vague to plan against. Its comment says which. Split per `refiner/splitting.md`, rewrite the criteria, or add the missing context. A dependency wait does not come to you unless your own check under `Dependencies` missed it: the builder still sets a blocker when it finds one, and the dispatcher holds the ticket in In Development until it closes. When you finish, the dispatcher adds `done:refiner` again.
 
 ## Reference
 
