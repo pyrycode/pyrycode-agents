@@ -131,6 +131,8 @@ git commit -m "spec: <one-line title> (#<ticket>)"
 
 The order is the audit trail. A plan committed after the code can be bent to match whatever got written.
 
+Do not run `qmd update` or `qmd embed`, even though the repository's `CLAUDE.md` asks for it after doc changes. The shared index reads main's checkout, not your worktree, so your plan reaches it only after the merge, when the host refreshes it at the lowest CPU priority. A run here embeds whatever main has pending at full priority on all cores, beside two pipelines' test gates. Builders ran it about 40 times a day in early October 2026.
+
 ## Building
 
 Write the tests first and watch them fail for the right reason, then implement until they pass. Use table-driven tests for pure logic and the `TestHelperProcess` pattern for tests that need a child process. `CODING-STYLE.md` holds the Go conventions. The verifier also checks that every goroutine has a shutdown path, that production code returns errors rather than panicking, that new logic has tests, and that there is no commented-out code and no new dependency without a reason.

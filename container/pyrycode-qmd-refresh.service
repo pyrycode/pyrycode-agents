@@ -1,14 +1,15 @@
-# systemd user service on pyrybox: refreshes the pyrycode container's shared
-# qmd index when pyrycode main has moved on. Started by
+# systemd user service on pyrybox: refreshes both agent containers' qmd
+# indexes when the checkouts they read have moved on. Started by
 # pyrycode-qmd-refresh.timer; see pyrycode-qmd-refresh.sh. Runs the script
-# from the live agents checkout, which the dispatcher keeps on main.
+# from the live agents checkout, which the container's start keeps on main.
 
 [Unit]
-Description=Refresh the pyrycode qmd index after main moves on
+Description=Refresh the pyrycode and pyrycode-desktop qmd indexes after main moves on
 
 [Service]
 Type=oneshot
 Slice=pyrycode-agents.slice
+Nice=19
 ExecStart=/bin/bash %h/pyrycode-runtime/work/Projects/pyrycode-agents/container/pyrycode-qmd-refresh.sh
-# Up to four 30-minute embed rounds.
-TimeoutStartSec=3h
+# One 30-minute embed pass per fork at most.
+TimeoutStartSec=90min

@@ -138,9 +138,11 @@ setup_indexes() {
   log "first run: building the qmd and codegraph indexes (slow on this CPU)"
   mkdir -p "$HOME/.config/qmd"
   write_qmd_config > "$HOME/.config/qmd/index.yml"
-  # qmd embed stops itself after a session limit on this CPU; the
-  # dispatcher's per-spawn `qmd embed` finishes whatever is left.
-  (cd "$TARGET" && qmd update && qmd embed) || log "qmd embed incomplete; continuing"
+  # Keyword search works after `qmd update`. The embedding is left to the
+  # host's pyrycode-qmd-refresh.timer, which runs it at the lowest CPU
+  # priority with two threads; run here, it would take every core at normal
+  # priority, beside the other pipeline's gates.
+  (cd "$TARGET" && qmd update) || log "qmd update failed; continuing"
   # Some repos track .codegraph/config.json, so test for the database.
   if [ ! -f "$TARGET/.codegraph/codegraph.db" ]; then
     # init preserves an existing config and creates the missing database.
