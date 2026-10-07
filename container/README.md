@@ -95,12 +95,24 @@ Verified 2026-10-04 in both containers: Codex answered a prompt, `gh` reached Gi
 - **Secrets** come from Podman secrets, not from `op run`. `automation-access-shim` stands in for the 1Password helper so `bin/pyry-start` runs unchanged. The dispatcher loads `.env` itself.
 - **Agents' GitHub login** is the dispatcher's token, passed as `GH_TOKEN`, which the dispatcher does not scrub from agent environments. git pushes through gh's credential helper. On the Mac, agents used the personal login in the Keychain. No login is stored on disk. The token carries the `read:org` scope among others, but it is still passed only as `GH_TOKEN`, never stored through `gh auth login`.
 - **Secrets at rest:** Podman keeps secrets as plain files under the pyry account's home, so Pyry can read them. Accepted on 2026-10-04 as temporary; a safer arrangement is still open.
-- **qmd** indexes only the fork's own docs, plus `pyrycode-docs` for desktop. On the Mac, agents could also search the personal vault and the other forks' docs.
+- **qmd** indexes only the fork's own docs, plus `pyrycode-docs` for desktop, and only markdown. On the Mac, agents could also search the personal vault and the other forks' docs.
 - **User-level Claude files** are copies in `user-files/`: the shared git policy as `CLAUDE.md`, the `gh project item-list` guard hook, and `board-cards`. When the Mac originals change, update the copies and rebuild.
 
 ## qmd index refresh
 
-`pyrycode-qmd-refresh.timer` checks every five minutes whether the pyrycode checkout's commit differs from the one last indexed, stored in `~/pyrycode-runtime/qmd-indexed-commit`. When it does, `pyrycode-qmd-refresh.sh` runs `qmd update` and repeats `qmd embed` inside the running dispatcher container until nothing is pending, then updates the stamp. Otherwise it does nothing. It only reads the checkout: the dispatcher fast-forwards it after each merge. Added 2026-10-04 so the documentation agent no longer rebuilds an index in its worktree. Install on pyrybox from the live agents checkout:
+Both containers' qmd indexes are refreshed on the host, and nothing else embeds: both fork env files set `PYRY_SKIP_QMD_REFRESH=1`, so neither dispatcher runs its own `qmd update && qmd embed` before each spawn (agent-dispatcher#115), and the builder role is told not to run it. On the desktop board that per-spawn run had timed out at 120 seconds on all 175 spawns in the day to 2026-10-07.
+
+`pyrycode-qmd-refresh.timer` checks every five minutes whether the checkouts an index reads have moved since its last complete refresh. The pyrycode index reads `pyrycode`; the desktop index reads `pyrycode-desktop` and `pyrycode`. The stamps are `~/pyrycode-runtime/qmd-indexed-<fork>`. When a fork is behind, `pyrycode-qmd-refresh.sh` runs `qmd update` and one `qmd embed` pass, which qmd stops after 30 minutes. A fork left with documents pending keeps its old stamp, so the next tick carries on. The script only reads the checkouts: the dispatchers fast-forward them after each merge.
+
+The work runs at the lowest priority the box offers:
+
+- **Own container.** A short-lived container of the dispatcher's image and home, beside the dispatchers in `pyrycode-agents.slice`, with CPU weight 1 against their 100 and at most two CPUs. `nice` inside the dispatcher container would not do: the other pipeline's gates sit in a sibling cgroup, and the kernel splits the CPU between containers before `nice` applies.
+- **Two threads.** `qmd-embed-threads.mjs`, loaded through `NODE_OPTIONS`, caps qmd's embedding threads at two. qmd 2.1.0 has no setting for it and takes all four cores of the i7-3770.
+- **nice 19 and the idle IO class** inside that container. The disks use the `none` IO scheduler, which ignores IO classes, so `ionice` changes nothing today.
+
+What gets embedded is markdown only: each collection's pattern is `**/*.md`, and code search is codegraph's job. Most of the time goes to two very large generated files, `docs/protocol-mobile.md` and `docs/knowledge/CATALOG.md`, which qmd re-embeds whole, about 220 chunks each, whenever a line changes. At two threads, one can outlast qmd's 30-minute pass, which leaves the rest of that file without vectors until it changes again; keyword search still covers it.
+
+Install or update on pyrybox from the live agents checkout:
 
 ```bash
 cp ~/pyrycode-runtime/work/Projects/pyrycode-agents/container/pyrycode-qmd-refresh.{service,timer} ~/.config/systemd/user/
@@ -109,7 +121,7 @@ systemctl --user enable --now pyrycode-qmd-refresh.timer
 journalctl --user -u pyrycode-qmd-refresh
 ```
 
-The service runs the script from the live checkout, so a merged change to it needs no reinstall. Because of it, `forks/pyrycode.env` sets `PYRY_SKIP_QMD_REFRESH=1`, so the pyrycode dispatcher no longer runs its own `qmd update && qmd embed` before each spawn (agent-dispatcher#115). The desktop container's own copy of `pyrycode-docs` is still refreshed only by its dispatcher before each spawn.
+The service runs the script from the live checkout, so a merged change to the script needs no reinstall, only a fast-forward of that checkout. A change to the unit files needs the copy above.
 
 ## Updating
 
