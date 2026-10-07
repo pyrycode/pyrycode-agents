@@ -186,6 +186,10 @@ This applies to the plan and to every code comment. Write ``the guard in `trailG
 
 `make cite-guard`, part of the verifier's gate, fails a `//` comment that cites a file and line inside a declaration, ranges such as `foo.go:120-140` included. A bare `:NNN` slips past the guard but reads worst of all, so do not write one either. If a symbol name is not precise enough, the declaration is too big, and saying so helps more than a line number. The guard checks only lines your branch adds or changes, so a citation your branch merely displaces is not yours to fix. Do not copy the older `file.go:NNN` comments in surrounding code.
 
+## Comments state the contract, and files stay small
+
+Follow "Comments: Contract, Not History" and "File Size" in the target repository's `CODING-STYLE.md`. A comment states what is true now: the contract, invariants, security properties and the reason a reader would otherwise get wrong. Earlier wording, earlier values, ticket chronology and declined arguments go in your commit message and PR body, not in the comment. When your change makes a comment on a declaration you touch wrong, rewrite it to the new truth instead of adding a paragraph under it. If your change would push a file past about 1500 lines, put the new code in a new file for its family in the same package. Some tests read a symbol from a named file; `CODING-STYLE.md` lists them.
+
 ## A bug outside your ticket
 
 If you find a bug whose fix needs production code outside your ticket's scope, do not fix it here. File it as its own ticket. This holds when the fix looks small and you have budget left, and when the test that exposed it is one you just wrote. The question is whether the fix needs production code beyond your ticket, not who wrote the failing test.
