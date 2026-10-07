@@ -78,20 +78,22 @@ refresh() {
     before=$(pending)
     echo "before $before"
     [ "$before" = 0 ] && exit 0
-    NODE_OPTIONS="--import=$PRELOAD" QMD_EMBED_THREADS=$THREADS \
-      nice -n 19 ionice -c3 qmd embed >/dev/null 2>&1
+    TIMEFORMAT="cpu %U %S"
+    { time NODE_OPTIONS="--import=$PRELOAD" QMD_EMBED_THREADS=$THREADS \
+        nice -n 19 ionice -c3 qmd embed >/dev/null 2>&1; } 2>&1
     echo "after $(pending)"' 2>&1)
   local rc=$?
   embed_container=""
-  local before after
+  local before after cpu
   before=$(sed -n 's/^before //p' <<<"$out")
   after=$(sed -n 's/^after //p' <<<"$out")
   after=${after:-$before}
+  cpu=$(awk '/^cpu /{printf ", embed used %d CPU-seconds", $2 + $3}' <<<"$out")
   if [ $rc -ne 0 ] || [ -z "$before" ]; then
     echo "$fork: refresh failed (exit $rc): $(tail -3 <<<"$out" | tr '\n' ' ')"
     return 0
   fi
-  echo "$fork: $before pending, $after left after $(( (SECONDS - start) / 60 ))m $(( (SECONDS - start) % 60 ))s"
+  echo "$fork: $before pending, $after left after $(( (SECONDS - start) / 60 ))m $(( (SECONDS - start) % 60 ))s$cpu"
   if [ "$after" = 0 ]; then
     echo "$key" > "$stamp"
   elif [ "$after" = "$before" ]; then
