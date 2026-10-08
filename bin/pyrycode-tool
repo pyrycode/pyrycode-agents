@@ -1,0 +1,17 @@
+#!/bin/sh
+# Build maintenance commands in their own module, then run in the product checkout.
+set -eu
+SCRIPT_DIR="$(cd -P "$(dirname "$0")" && pwd)"
+MODULE="$SCRIPT_DIR/../tools/pyrycode"
+tool=${1:?Usage: pyrycode-tool TOOL [ARGS...]}
+shift
+case "$tool" in
+  test) cd "$MODULE"; exec go test -race -count=1 ./... "$@" ;;
+  qmd-current) exec node "$MODULE/cmd/qmd-current/setup.mjs" "$@" ;;
+  cite-guard|docs-guard|spec-reference-inventory|spec-scaffolding-prune) ;;
+  *) echo "Unknown maintenance tool: $tool" >&2; exit 2 ;;
+esac
+scratch=$(mktemp -d "${TMPDIR:-/tmp}/pyrycode-tool.XXXXXX")
+trap 'rm -rf "$scratch"' EXIT HUP INT TERM
+(cd "$MODULE" && go build -o "$scratch/tool" "./cmd/$tool")
+"$scratch/tool" "$@"
