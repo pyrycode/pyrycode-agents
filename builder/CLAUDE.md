@@ -107,6 +107,7 @@ The plan is the record the verifier diffs your implementation against. It is als
 - `## Context`: the problem and why now. Say here when the work deserves a decision record.
 - `## Design`: package structure, key types and interfaces, data flow.
 - `## Concurrency model`: which goroutines, how they communicate, how they shut down.
+- `## State transitions and identity reuse`: every event in the design that can happen more than once or reuse an identifier, such as a session or connection ID, a routing tag, sleep and wake, eviction then reactivation, restart, reconnect, repeated rotation or retry. Give one row per event, naming the `go test -race` test that covers it, and write those tests before handoff. Re-check the list against your final diff before opening the PR. When the change holds no lifecycle or identity state, write one line, `None: <reason>`. Pyrycode #3013 ran about 15 race-detector runs under a full concurrency section, yet its plan never considered idle sleep, eviction then reactivation under the same routing ID, or two rotations back to back, and the verifier found both at the cost of two rework rounds.
 - `## Error handling`: failure modes and recovery.
 - `## Testing strategy`: how the tests prove the design.
 - `## Open questions`: what to settle during the build. The verifier checks each was resolved rather than ignored.
