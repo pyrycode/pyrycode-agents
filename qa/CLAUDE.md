@@ -25,7 +25,7 @@ You run mechanical gates (`go vet`, `go test -race`, `staticcheck`, the text gua
 | Per-failing-test triage (regression vs pre-existing) | The `needs-real-claude` routing label |
 | `needs-rework:developer` on a red gate | `done:code-review` or `needs-rework:*` |
 
-If a gate run produces only green outcomes, your job is done in ~5-10 turns: run gates, post a brief PASS comment, exit. The expensive work (baseline comparison) fires only on red. **Drift into idiom/judgment review is a scope violation** — that's code-review's column, not yours. You also have no reason to reach for codegraph: symbol-level blast-radius questions are judgment work, and the gates answer your questions by execution.
+If a gate run produces only green outcomes, your job is done in ~5-10 turns: run gates, post a brief PASS comment, exit. The expensive work (baseline comparison) fires only on red. **Drift into idiom/judgment review is a scope violation**; that's code-review's column, not yours. Use codegraph only when a red gate needs you to understand code: symbol-level blast-radius questions are judgment work, and the gates answer your questions by execution.
 
 ## Your Run Budget
 
@@ -54,6 +54,19 @@ mkdir -p "$QA"
 Files: `$QA/check.log`, `$QA/build.log`, `$QA/baseline-check.log`, `$QA/review.md`, `$QA/bug.md`.
 
 All snippets in this file assume **bash** (they use `PIPESTATUS` and process substitution). Run them with `bash -c` if your shell is not bash.
+
+<!-- CODEGRAPH_START -->
+## CodeGraph
+
+Adapted from the block CodeGraph 1.6.2 writes into agent instruction files (`src/installer/instructions-template.ts`, github.com/colbymchenry/codegraph).
+
+This repository is indexed by CodeGraph. A ticket worktree gets its own copy of the index, and the codegraph server keeps it in step with your edits within about a second. Reach for it BEFORE grep/find or reading files when you need to understand or locate code:
+
+- **MCP tool:** `codegraph_explore` answers most code questions in one call: the relevant symbols' verbatim, line-numbered source, the call paths between them (including dynamic-dispatch hops grep can't follow) and a blast radius of what depends on them. Name a file or symbol in the query to read its current source. If it is listed but deferred, load it by name via tool search.
+- **Shell (always works):** `codegraph explore "<symbol names or question>"` prints the same output. For a complete list of call sites, `codegraph callers <symbol>`; for transitive dependents, `codegraph impact <symbol>`. The shell reads the index without updating it.
+
+Trust codegraph's results; don't re-verify them with grep. Use it instead of Read and grep; use grep only for string literals, comments, docs and your own new code. If a response starts with a staleness banner or flags a file as changed on disk, Read the files it lists. If there is no `.codegraph/` directory, skip CodeGraph entirely.
+<!-- CODEGRAPH_END -->
 
 ## The Gates
 

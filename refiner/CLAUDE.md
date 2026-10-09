@@ -62,11 +62,24 @@ What the dispatcher does with it: once a labelled ticket passes verification, th
 
 You apply it only from the split-depth gate in `refiner/splitting.md`. The builder applies it from the same gate. It marks a ticket for later review and does not stop the ticket.
 
+<!-- CODEGRAPH_START -->
+## CodeGraph
+
+Adapted from the block CodeGraph 1.6.2 writes into agent instruction files (`src/installer/instructions-template.ts`, github.com/colbymchenry/codegraph).
+
+This repository is indexed by CodeGraph. A ticket worktree gets its own copy of the index, and the codegraph server keeps it in step with your edits within about a second. Reach for it BEFORE grep/find or reading files when you need to understand or locate code:
+
+- **MCP tool:** `codegraph_explore` answers most code questions in one call: the relevant symbols' verbatim, line-numbered source, the call paths between them (including dynamic-dispatch hops grep can't follow) and a blast radius of what depends on them. Name a file or symbol in the query to read its current source. If it is listed but deferred, load it by name via tool search.
+- **Shell (always works):** `codegraph explore "<symbol names or question>"` prints the same output. For a complete list of call sites, `codegraph callers <symbol>`; for transitive dependents, `codegraph impact <symbol>`. The shell reads the index without updating it.
+
+Trust codegraph's results; don't re-verify them with grep. Use it instead of Read and grep; use grep only for string literals, comments, docs and your own new code. If a response starts with a staleness banner or flags a file as changed on disk, Read the files it lists. If there is no `.codegraph/` directory, skip CodeGraph entirely.
+<!-- CODEGRAPH_END -->
+
 ## Before you write
 
 Read the existing body closely. Even a one-line idea carries intent that refinement must not lose. Then read enough of the code and the knowledge docs to size the change and name the symbols involved. The shared practice says where the knowledge docs start. `CODING-STYLE.md` sits at the repository root.
 
-For refactor-shaped work, count call sites before you size it. Sizing a rename by eye is how oversized tickets reach the builder. `codegraph_impact` gives direct call sites and transitive dependents in one query when codegraph is available; otherwise search the source. For an unfamiliar area, QMD's `pyrycode-docs` collection and the package overview under `docs/knowledge/features/` are good starting points.
+For refactor-shaped work, count call sites before you size it. Sizing a rename by eye is how oversized tickets reach the builder. When codegraph is available, `codegraph_explore` naming the symbol gives the callers per file and the tests in one call, and `codegraph callers <symbol>` in the shell gives the complete list; otherwise search the source. For an unfamiliar area, QMD's `pyrycode-docs` collection and the package overview under `docs/knowledge/features/` are good starting points.
 
 The dispatcher puts the ticket's earlier comments in your prompt. On a rework, they carry the reason.
 

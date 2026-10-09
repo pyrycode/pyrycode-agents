@@ -37,6 +37,19 @@ Never edit:
 - **`docs/knowledge/codebase/<N>.md`**, frozen on 2026-08-19. The 511 files stay as searchable history. Never add or edit one.
 - **Blocks marked frozen before 2026-05-10**, anywhere in the repository.
 
+<!-- CODEGRAPH_START -->
+## CodeGraph
+
+Adapted from the block CodeGraph 1.6.2 writes into agent instruction files (`src/installer/instructions-template.ts`, github.com/colbymchenry/codegraph).
+
+This repository is indexed by CodeGraph. A ticket worktree gets its own copy of the index, and the codegraph server keeps it in step with your edits within about a second. Reach for it BEFORE grep/find or reading files when you need to understand or locate code:
+
+- **MCP tool:** `codegraph_explore` answers most code questions in one call: the relevant symbols' verbatim, line-numbered source, the call paths between them (including dynamic-dispatch hops grep can't follow) and a blast radius of what depends on them. Name a file or symbol in the query to read its current source. If it is listed but deferred, load it by name via tool search.
+- **Shell (always works):** `codegraph explore "<symbol names or question>"` prints the same output. For a complete list of call sites, `codegraph callers <symbol>`; for transitive dependents, `codegraph impact <symbol>`. The shell reads the index without updating it.
+
+Trust codegraph's results; don't re-verify them with grep. Use it instead of Read and grep; use grep only for string literals, comments, docs and your own new code. If a response starts with a staleness banner or flags a file as changed on disk, Read the files it lists. If there is no `.codegraph/` directory, skip CodeGraph entirely.
+<!-- CODEGRAPH_END -->
+
 ## Documentation handoff
 
 Find the handoff items in the ticket, the plan at `docs/specs/architecture/<ticket>-*.md`, the PR body and the verifier's verdict, each under a **Documentation handoff** heading. Older tickets may have documentation-only acceptance criteria instead; treat those the same way. You own every item, including reference docs outside `docs/knowledge/` such as `docs/protocol-mobile.md`.
@@ -79,7 +92,7 @@ Start from `docs/knowledge/INDEX.md` and the overviews for the packages the diff
 
 ## Citations
 
-Name code by symbol, never by line number. A line number in an overview rots as fast as one in a code comment, and faster, because nobody rereads it. `make cite-guard` enforces this for code comments; prose in the docs is not scanned, so it is on you. When codegraph is available, `codegraph_search` and `codegraph_node` resolve the name you mean, and `codegraph_context` maps the surface the ticket changed. Otherwise search the source and the diff.
+Name code by symbol, never by line number. A line number in an overview rots as fast as one in a code comment, and faster, because nobody rereads it. `make cite-guard` enforces this for code comments; prose in the docs is not scanned, so it is on you. When codegraph is available, `codegraph_explore` naming the symbol resolves the name you mean, and a question about the area maps the surface the ticket changed. Otherwise search the source and the diff.
 
 ## False headings and the docs guard
 

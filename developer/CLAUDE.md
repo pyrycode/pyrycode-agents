@@ -35,7 +35,7 @@ Optional, when the steps above left a gap: `mcp__qmd__query(collection: "pyrycod
 
 ## Citations — the build enforces this
 
-`make cite-guard` fails on any `//`-comment citation that resolves to a declaration — because the line IS one, is a doc comment on one, or sits *anywhere inside* one, at any depth. Name the symbol instead; use `codegraph_search` to get it.
+`make cite-guard` fails on any `//`-comment citation that resolves to a declaration, because the line IS one, is a doc comment on one, or sits *anywhere inside* one, at any depth. Name the symbol instead; use `codegraph_explore` (or the shell's `codegraph query <name>`) to get it.
 
 - **No 20-line depth exemption.** One existed; removed 2026-08-13.
 - **No range exemption.** Ranges were exempt until 2026-08-14; they are not now.
@@ -59,24 +59,33 @@ Writing docs inside the implementation budget consistently pushed runs over the 
 
 If you discover a lesson worth recording, capture it as a "Lessons learned" bullet in your PR body. The documentation phase folds those bullets into the package overview — you don't write the doc itself. Record the thing that would have gone wrong, not what you built: a design you rejected and why, a test that would have passed green while broken, a trap that cost you a cycle. The diff already says what shipped.
 
-## Codegraph (use it before grep)
+<!-- CODEGRAPH_START -->
+## CodeGraph
 
-Pyrycode is indexed for codegraph; the `mcp__codegraph__codegraph_*` MCP tools are wired into your tool surface, and the dispatcher symlinks the canonical `.codegraph/` index into your worktree. **Default to codegraph for symbol-level questions; fall back to grep only when codegraph returns no useful results.** Each tool call is a turn — don't pay for both.
+Adapted from the block CodeGraph 1.6.2 writes into agent instruction files (`src/installer/instructions-template.ts`, github.com/colbymchenry/codegraph).
+
+This repository is indexed by CodeGraph. A ticket worktree gets its own copy of the index, and the codegraph server keeps it in step with your edits within about a second. Reach for it BEFORE grep/find or reading files when you need to understand or locate code:
+
+- **MCP tool:** `codegraph_explore` answers most code questions in one call: the relevant symbols' verbatim, line-numbered source, the call paths between them (including dynamic-dispatch hops grep can't follow) and a blast radius of what depends on them. Name a file or symbol in the query to read its current source. If it is listed but deferred, load it by name via tool search.
+- **Shell (always works):** `codegraph explore "<symbol names or question>"` prints the same output. For a complete list of call sites, `codegraph callers <symbol>`; for transitive dependents, `codegraph impact <symbol>`. The shell reads the index without updating it.
+
+Trust codegraph's results; don't re-verify them with grep. Use it instead of Read and grep; use grep only for string literals, comments, docs and your own new code. If a response starts with a staleness banner or flags a file as changed on disk, Read the files it lists. If there is no `.codegraph/` directory, skip CodeGraph entirely.
+<!-- CODEGRAPH_END -->
 
 Your two highest-leverage moments:
 
-- **Before changing any function signature, removing any export, or renaming any type** — run `codegraph_callers <symbol>` to enumerate every call site you must update. Missing one is a build break that wastes a compile-and-refix cycle.
-- **Before extending a function or adding a sibling** — run `codegraph_callees <symbol>` to understand internal structure, and `codegraph_search <name>` to find existing patterns you should mirror rather than reinvent.
+- **Before changing any function signature, removing any export, or renaming any type**, run `codegraph_explore` naming the symbol: its blast radius lists the callers per file and the tests that cover it. For the complete list of call sites you must update, `codegraph callers <symbol>` in the shell. After a rename or removal the old name is gone from the index, so search for it as text to catch a leftover caller. Missing one is a build break that wastes a compile-and-refix cycle.
+- **Before extending a function or adding a sibling**, run `codegraph_explore` naming the function to see its source and what it calls, and the existing patterns you should mirror rather than reinvent.
 
-Also: `codegraph_impact` (blast radius — use before any non-additive change), `codegraph_node` (definition + signature + structural context), `codegraph_context "<ticket title + paraphrased AC>"` (when the spec's reading list feels short).
+Also: `codegraph impact <symbol>` in the shell for transitive dependents before any non-additive change, and `codegraph_explore` with a question about the area when the spec's reading list feels short.
 
-**Fall back to grep / Read for:**
+**Use grep / Read only for:**
 
 - Comment-only references (codegraph parses code, not comments)
 - String literals — URLs, paths, log messages, `t.Run` test names
 - Documentation files (`docs/`, `CLAUDE.md`) — Read or QMD
-- Your own pending edits in the worktree (the symlinked index reflects the canonical repo, not your in-flight changes)
-- Codegraph returned empty when you expected hits — note the gap, then grep
+- Your own new code
+- A name your branch renamed or removed, which the index no longer holds
 
 **Smell phrases that mean you're reaching for grep without a reason:** *"just one quick grep, codegraph would be overkill"*, *"I'll grep first to see if I even need codegraph"*, *"this change is too small to check callers"*. The cost is one turn either way and codegraph's output is structurally richer.
 

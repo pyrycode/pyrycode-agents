@@ -102,6 +102,14 @@ Verified 2026-10-04 in both containers: Codex answered a prompt, `gh` reached Gi
 - **qmd** indexes only the fork's own docs, plus `pyrycode-docs` for desktop, and only markdown. On the Mac, agents could also search the personal vault and the other forks' docs.
 - **User-level Claude files** are copies in `user-files/`: the shared git policy as `CLAUDE.md`, the `gh project item-list` guard hook, and `board-cards`. When the Mac originals change, update the copies and rebuild.
 
+## Codegraph index
+
+Each container keeps one codegraph index, in its fork's main checkout (`/work/Projects/<fork>/.codegraph/`). The first start builds it, and the start after a codegraph upgrade rebuilds it once when `codegraph status` recommends a re-index, which is how the 0.6.8 index becomes a 1.6.2 one. After each auto-merge the dispatcher runs `codegraph sync -q` there in the background.
+
+Every ticket worktree gets its own copy of that index, made with SQLite's `VACUUM INTO` when the dispatcher prepares the worktree, and replacing the symlink older dispatchers left. The agent's codegraph server catches the copy up with the branch when it starts and folds the agent's edits in through its file watcher, so the index an agent queries is its own branch, edits included. A symlink no longer works with codegraph 1.x: the server writes what it serves into the index it opened, so one worktree's branch landed in the index every other worktree and the main checkout read (reproduced on pyrybox, 2026-10-09). A copy of pyrycode's index is about 110 MB, and catching it up with a branch 15 commits behind main took about eight seconds.
+
+The image sets `CODEGRAPH_NO_DAEMON=1`, so each agent's server runs inside the agent's MCP client and exits with it instead of leaving a detached daemon behind, and `CODEGRAPH_TELEMETRY=0`. Codex starts MCP servers with a cleared environment, so `user-files/codex/config.toml` sets both again. The MCP surface is codegraph's default, `codegraph_explore` alone; `codegraph callers` and `codegraph impact` stay available in the shell.
+
 ## qmd index refresh
 
 Both containers' qmd indexes are refreshed on the host, and nothing else embeds: both fork env files set `PYRY_SKIP_QMD_REFRESH=1`, so neither dispatcher runs its own `qmd update && qmd embed` before each spawn (agent-dispatcher#115), and the builder role is told not to run it. On the desktop board that per-spawn run had timed out at 120 seconds on all 175 spawns in the day to 2026-10-07.

@@ -7,8 +7,10 @@
 #   pyry-container codex-login  one-time ChatGPT device login for Codex
 #   pyry-container run     setup, then start the dispatcher (the default)
 #
-# Every step is idempotent. Only the indexes are slow, and they are built
-# once, then refreshed by the dispatcher before each agent spawn.
+# Every step is idempotent. Only the indexes are slow. They are built once
+# (and codegraph's again after a codegraph upgrade), then the dispatcher
+# refreshes them: qmd before each agent spawn, codegraph after each merge,
+# and each worktree gets its own copy of the codegraph index.
 #
 # FORK selects the pipeline: pyrycode (default, board 1) or
 # pyrycode-desktop (board 7). Both forks share /work, so the desktop
@@ -147,9 +149,27 @@ setup_indexes() {
   if [ ! -f "$TARGET/.codegraph/codegraph.db" ]; then
     # init preserves an existing config and creates the missing database.
     # index requires that database, even when the directory already exists.
-    (cd "$TARGET" && codegraph init -i)
+    # -y: never stop at a prompt, there is no terminal here.
+    (cd "$TARGET" && codegraph init -y)
   fi
   date -u +%Y-%m-%dT%H:%M:%SZ > "$INDEX_STAMP"
+}
+
+# Runs on every start, after setup_indexes. An index written by an older
+# codegraph opens fine (the schema migrates in place), but its extracted
+# graph is missing what the newer engine produces, so codegraph recommends
+# a full rebuild. This is how the 0.6.8 index becomes a 1.x one after an
+# image rebuild. A full 1.6.2 index took 16 seconds for pyrycode and about
+# three minutes for pyrycode-desktop on pyrybox's host; agents wait, since
+# every worktree copies this index.
+refresh_codegraph_index() {
+  [ -f "$TARGET/.codegraph/codegraph.db" ] || return 0
+  if (cd "$TARGET" && codegraph status --json 2>/dev/null) \
+       | jq -e '.index.reindexRecommended == true' >/dev/null 2>&1; then
+    log "codegraph index was built by an older codegraph; rebuilding it"
+    (cd "$TARGET" && codegraph index -q) \
+      || log "codegraph rebuild failed; agents run without a current index"
+  fi
 }
 
 write_qmd_config() {
@@ -209,6 +229,7 @@ setup() {
   setup_claude
   setup_codex
   setup_indexes
+  refresh_codegraph_index
 }
 
 check() {

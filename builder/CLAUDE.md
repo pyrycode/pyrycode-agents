@@ -71,7 +71,7 @@ The refiner applies the same numbers. You apply them twice: to the body and your
 
 Count total written work, not production lines. Tests are most of it, since each test function is its own edit and debug cycle, and per-branch log calls multiply with every reject branch. On 2026-05-16, #432, #445 and #446 were planned at 60 to 150 production lines and landed at 541, 2096 and 1071 lines in total.
 
-For refactor-shaped work, such as renaming or changing a signature, replacing a widely used type, or flipping imports across packages, the call-site line usually binds before the line count does. Count call sites with `codegraph_impact`. Use grep over `internal/` and `cmd/` only when codegraph has not indexed the symbol yet.
+For refactor-shaped work, such as renaming or changing a signature, replacing a widely used type, or flipping imports across packages, the call-site line usually binds before the line count does. Count call sites with `codegraph_explore` naming the symbol, or with `codegraph callers <symbol>` in the shell for the complete list.
 
 The counts are raw. Edits that look mechanical still cost turns, because each consumer still has to be read, changed and rebuilt. #75 framed 26 call sites as "mechanical appends", sized itself small and ran out of budget in the cascade. #29 changed about 35 production lines across five test files and ran out the same way. If you catch yourself writing a paragraph about why the real count is lower than the raw one, that paragraph is the signal to split.
 
@@ -101,7 +101,7 @@ Adding entries beside the other ticket's in a shared list, table, wiring module 
 
 The plan is the record the verifier diffs your implementation against. It is also your own context if a rework or a continuation leg picks the ticket up later. A full plan has these sections:
 
-- `## Files read`: the paths and the symbols that matter, each with one line on why. Build it from `codegraph_context` and prune it as the design firms up. The verifier uses it as the map for its review of what the change can break. When a package overview holds a lesson that changes how this ticket should be built, name it here, because a lesson reaches a rework only if the plan carries it. For example:
+- `## Files read`: the paths and the symbols that matter, each with one line on why. Build it from `codegraph_explore` on the ticket's key symbols and prune it as the design firms up. The verifier uses it as the map for its review of what the change can break. When a package overview holds a lesson that changes how this ticket should be built, name it here, because a lesson reaches a rework only if the plan carries it. For example:
   - `internal/sessions/pool.go` → `RotateID`: semantics and error contract
   - `docs/knowledge/features/sessions-package.md` § "Claude session storage on disk": the encoded-cwd rule
 - `## Context`: the problem and why now. Say here when the work deserves a decision record.
@@ -212,8 +212,19 @@ Work on the existing branch, where your plan and code already are. When a findin
 
 If your prompt says the dispatcher left a merge from main unfinished in your worktree, finish that merge first. Keep every line main added: the dispatcher checks for them before anything is pushed.
 
-## Codegraph
+<!-- CODEGRAPH_START -->
+## CodeGraph
 
-The `mcp__codegraph__codegraph_*` tools answer symbol questions in one call, including the chain through helpers and wrappers that grep misses. The useful moments are `codegraph_context` on the ticket at the start, `codegraph_impact` to count call sites while sizing, `codegraph_callers` before changing a signature, removing an export or renaming a type, and `codegraph_search` or `codegraph_callees` to find an existing pattern to follow. A missed caller is a build break and a wasted cycle.
+Adapted from the block CodeGraph 1.6.2 writes into agent instruction files (`src/installer/instructions-template.ts`, github.com/colbymchenry/codegraph).
 
-Use grep or file reads for comments, string literals such as log messages and `t.Run` names, docs, and your own new code. The index reflects the main checkout, not your edits. When codegraph returns nothing where you expected hits, or is not available in your runtime, use `rg`.
+This repository is indexed by CodeGraph. A ticket worktree gets its own copy of the index, and the codegraph server keeps it in step with your edits within about a second. Reach for it BEFORE grep/find or reading files when you need to understand or locate code:
+
+- **MCP tool:** `codegraph_explore` answers most code questions in one call: the relevant symbols' verbatim, line-numbered source, the call paths between them (including dynamic-dispatch hops grep can't follow) and a blast radius of what depends on them. Name a file or symbol in the query to read its current source. If it is listed but deferred, load it by name via tool search.
+- **Shell (always works):** `codegraph explore "<symbol names or question>"` prints the same output. For a complete list of call sites, `codegraph callers <symbol>`; for transitive dependents, `codegraph impact <symbol>`. The shell reads the index without updating it.
+
+Trust codegraph's results; don't re-verify them with grep. Use it instead of Read and grep; use grep only for string literals, comments, docs and your own new code. If a response starts with a staleness banner or flags a file as changed on disk, Read the files it lists. If there is no `.codegraph/` directory, skip CodeGraph entirely.
+<!-- CODEGRAPH_END -->
+
+The useful moments are `codegraph_explore` on the ticket's key symbols at the start, `codegraph callers <symbol>` in the shell to count call sites while sizing, `codegraph_explore` naming the symbol before changing a signature, removing an export or renaming a type, since its blast radius lists the callers per file and the tests that cover them, and `codegraph_explore` naming a similar function to find an existing pattern to follow. A missed caller is a build break and a wasted cycle.
+
+Use grep only for comments, string literals such as log messages and `t.Run` names, docs, and your own new code. A name your branch renamed or removed is no longer in the index, so search for the old name as text to find a leftover caller.
