@@ -162,6 +162,8 @@ Do not run `make e2e-realclaude` or `make preship`. After a repair whose verifie
 python3 "$AGENTS_REPO_PATH/dispatcher/scripts/live-claude-gate.py" go --tests "^TestName$"
 ```
 
+Skip this run when the ticket assigns live proof to the dispatcher, for example by saying its live gate proves the behaviour or that no separate focused run is needed. The dispatcher's live gate covers it then: name the pending live check in the PR and finish. On 2026-10-09 Codex's approval reviewer refused #3026's targeted run for exactly that reason.
+
 Use the named test or the smallest relevant test family. The launcher fetches the Claude login with the restricted Dev Agents account for its own child process. Never obtain or copy the login yourself. Paste the selected test, executed and passed counts into the PR and final handoff. Zero executed is not a pass. Missing account access is an environment blocker. Never print secrets or the environment.
 
  The dispatcher runs the live suite itself after the verifier passes a ticket labelled `needs-real-claude`. Keep that label on the issue, name the pending live check in the PR and your final summary, and finish your stage.
