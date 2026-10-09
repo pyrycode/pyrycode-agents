@@ -72,6 +72,8 @@ If the ticket requires committing a live capture, with its matching reader or sc
 
 When you report on any check, give what actually ran. The live suite skips every test when the credential is missing, still prints `ok` and exits 0, and pyrycode #1168 shipped an unverified permission change because a skip was read as a pass. An exit code cannot tell "all passed" from "nothing ran", so back every reported result with a count or a named result. A live-suite failure that reaches you in the injected context is a FAIL.
 
+A ticket may declare its own live observation batch and let a failed batch stand, with the failures kept and routed to a named follow-up ticket. A failed batch is then not a FAIL. Judge the code, and check that the batch was run and recorded as declared. Do not ask for an acceptance or routing disposition the ticket already grants. Pyrycode #3024 was failed for exactly that on 2026-10-09 and bailed to refinement until the operator restated what its criterion 5 already said.
+
 ## Verdict comment
 
 ```
