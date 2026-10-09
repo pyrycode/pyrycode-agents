@@ -213,7 +213,9 @@ start_display() {
   [ "$FORK" = pyrycode-desktop ] || return 0
   export DISPLAY="${DISPLAY:-:99}"
   if [ ! -S "/tmp/.X11-unix/X${DISPLAY#:}" ]; then
-    Xvfb "$DISPLAY" -screen 0 1920x1080x24 -nolisten tcp >/tmp/xvfb.log 2>&1 &
+    # Last-client resets can reject a new Electron connection while the
+    # display process and socket still exist. Keep the display between launches.
+    Xvfb "$DISPLAY" -screen 0 1920x1080x24 -nolisten tcp -noreset >/tmp/xvfb.log 2>&1 &
     for _ in 1 2 3 4 5 6 7 8 9 10; do
       [ -S "/tmp/.X11-unix/X${DISPLAY#:}" ] && break
       sleep 0.5
