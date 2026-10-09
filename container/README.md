@@ -51,7 +51,7 @@ All commands below run on the Mac from this folder unless marked pyrybox.
 
 ## Desktop specifics
 
-- **Display:** Electron needs an X display even with hidden windows. The entrypoint starts Xvfb on `:99` for the desktop fork, and gates and agents inherit `DISPLAY`. `pyry-container shell` opens a shell with the display running, for debugging.
+- **Display:** Electron needs an X display even with hidden windows. The entrypoint starts Xvfb on `:99` for the desktop fork, and gates and agents inherit `DISPLAY`. `pyry-container shell` opens a shell with the display running, for debugging. Xvfb uses `-noreset` to keep the display between test apps. Otherwise, its reset after the last app closes can reject the next connection even while its process and socket still exist.
 - **Shared memory:** Chromium crashes on Podman's default 64 MB `/dev/shm`, so the desktop unit sets `--shm-size=2g`.
 - **Chromium for the static visual capture** comes from Playwright, in `/opt/ms-playwright`. `PLAYWRIGHT_VERSION` in the `Containerfile` must match the desktop repo's locked `@playwright/test`. Electron itself is downloaded by `npm install` into `~/.cache/electron`.
 - **Daemon for the real-claude specs:** `PYRY_BIN` is the image's pinned pyry, v0.37.0 since 2026-10-06. `forks/pyrycode-desktop.env` sets the same version as `PYRY_HEALTH_DAEMON_MIN_VERSION`, so raise both together.
