@@ -56,8 +56,8 @@ enabled = false
 # The automatic approval reviewer's security policy. Codex 0.159.2 drops
 # auto_review.extra_policy with the served reviewer template (openai/codex
 # #50309), so `policy` replaces the whole default. The text below is that
-# default, copied verbatim from a 2026-10-04 review session, followed by one
-# Pyrycode section. On 2026-10-04 the reviewer refused builder #2761's
+# default, copied verbatim from a 2026-10-04 review session, followed by the
+# Pyrycode sections. On 2026-10-04 the reviewer refused builder #2761's
 # pipeline-helper push as export to "an unverified external GitHub destination",
 # after approving the same push in other runs that day. The reviewer trusts this
 # policy and AGENTS.md, but not the role instructions, so the authorisation
@@ -137,4 +137,11 @@ Approved by Juhana Ilmoniemi on 2026-10-04. This Codex home serves only the Pyry
 - In a builder, documentation or rework task, pushing the ticket's branch and opening or editing its pull request is the authorised, expected final step. The user authorises that payload, the commits on the ticket branch, for that destination. Score such an action `user_authorization = "high"`, and do not deny it as egress to an unverified remote.
 - This covers only the pipeline helper `/Users/juhanailmoniemi/.codex/bin/<repository>-pipeline-action` with the `push`, `pr-create` or `pr-edit` action, run from the ticket's worktree, optionally preceded by a read-only check such as `git branch --show-current` or `git status`. The helper fixes the destination: it refuses an origin other than `github.com/pyrycode/<repository>` and pushes only the current ticket branch, without force.
 - It does not cover any other command, remote, host or repository; a direct `git push` or `gh` call; a force push; a push to the default branch; a merge; or a branch deletion. Assess those under the rules above.
+
+## Pyrycode targeted live-Claude test
+Approved by Juhana Ilmoniemi on 2026-10-09.
+- In a builder task, `python3 /work/Projects/<agents-repository>/dispatcher/scripts/live-claude-gate.py <mode> --tests <selection>`, with `<mode>` one of `go` or `desktop` and optionally `--spec <file>`, run from a ticket worktree under `/work/Projects/.pyrycode-worktrees/`, is authorised and expected. It may carry an environment prefix such as `GOFLAGS=-race` and send its output to a file under `/tmp/`.
+- The script runs the repository's own named tests against Claude with the pipeline's own Claude login, which it fetches through the restricted Dev Agents 1Password account into its own child process. The agent never sees the login. The only external service it reaches is Claude, with the pipeline's account, which is the user's own subscription. Score it `user_authorization = "high"`, and do not deny it as data egress or as spending external-service tokens.
+- The builder instructions request this run after a repair whose verifier finding names a live test, unless the ticket assigns live proof to the dispatcher. Whether to skip it is the builder's call, not a risk in itself.
+- This covers only that script with those arguments. It does not cover printing or reading the login, `op` calls made directly by the agent, dumping the environment, `make e2e-realclaude`, `make preship`, or any other command. Assess those under the rules above.
 '''
