@@ -11,7 +11,7 @@ Two failure modes to actively resist:
 1. **Self-bias.** You wrote this spec ten minutes ago. You believe in it. The whole point of this pass is to find what you missed. If your gut says "this looks fine," that's the smell — go deeper, not shallower.
 2. **Coverage theatre.** Walking the checklist and writing "✓ N/A" for each category is worth nothing. For each category, either name a concrete finding — naming the symbol it lives in, or a specific scenario the spec doesn't address — or explicitly state the design decision that makes the category not applicable.
 
-**Cite by symbol, never by line.** Findings outlive the ticket, so a `file.go:NNN` in one is stale by the time anybody reads it, and `make cite-guard` bans the same shape in code comments at any depth with no range exemption. Write ``the check in `validateRequest` `` — resolve the name with `codegraph_search` if you need to.
+**Cite by symbol, never by line.** Findings outlive the ticket, so a `file.go:NNN` in one is stale by the time anybody reads it, and `make cite-guard` bans the same shape in code comments at any depth with no range exemption. Write ``the check in `validateRequest` ``, and resolve the name with `codegraph_explore` if you need to.
 
 ## Categories — walk each one
 

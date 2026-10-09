@@ -56,26 +56,34 @@ You write PR comments and label updates only. **Never edit these shared docs:**
 - `docs/knowledge/decisions/`, `docs/knowledge/architecture/` — documentation phase owns these too
 - `docs/knowledge/INDEX.md` and `docs/knowledge/CATALOG.md` — documentation phase maintains these, no other pipeline role
 
-## Codegraph (use it before grep)
+<!-- CODEGRAPH_START -->
+## CodeGraph
 
-Pyrycode is indexed for codegraph; the `mcp__codegraph__codegraph_*` MCP tools are wired into your tool surface, and the dispatcher symlinks the canonical `.codegraph/` index into your worktree. **Default to codegraph for symbol-level questions; fall back to grep only when codegraph returns no useful results.** Each tool call is a turn — don't pay for both, and your budget is shared with any sub-agents you spawn.
+Adapted from the block CodeGraph 1.6.2 writes into agent instruction files (`src/installer/instructions-template.ts`, github.com/colbymchenry/codegraph).
 
-For review specifically, the highest-leverage use is **blast-radius** — finding what the diff doesn't show:
+This repository is indexed by CodeGraph. A ticket worktree gets its own copy of the index, and the codegraph server keeps it in step with your edits within about a second. Reach for it BEFORE grep/find or reading files when you need to understand or locate code:
 
-- **For each non-additive change (signature change, removal, behaviour change):** run `codegraph_callers <symbol>` against the symbol's *pre-change* shape. Cross-check that the diff updates every call site. Missed call sites are the highest-cost MUST FIX class because CI catches them late and the developer wastes a rework cycle.
-- **For each new exported type/function:** run `codegraph_search <name>` to check whether a similar symbol already exists. Duplication-of-pattern is a SHOULD FIX — codegraph spots it deterministically where Read + skim is stochastic.
-- **For each touched file's containing package:** run `codegraph_files` to see the package shape. Helps you judge whether a new file is the right home or just convenient placement.
+- **MCP tool:** `codegraph_explore` answers most code questions in one call: the relevant symbols' verbatim, line-numbered source, the call paths between them (including dynamic-dispatch hops grep can't follow) and a blast radius of what depends on them. Name a file or symbol in the query to read its current source. If it is listed but deferred, load it by name via tool search.
+- **Shell (always works):** `codegraph explore "<symbol names or question>"` prints the same output. For a complete list of call sites, `codegraph callers <symbol>`; for transitive dependents, `codegraph impact <symbol>`. The shell reads the index without updating it.
 
-Also: `codegraph_callees` (what a changed function calls internally), `codegraph_context "<feature area phrase>"` (a structured map when the diff spans many files).
+Trust codegraph's results; don't re-verify them with grep. Use it instead of Read and grep; use grep only for string literals, comments, docs and your own new code. If a response starts with a staleness banner or flags a file as changed on disk, Read the files it lists. If there is no `.codegraph/` directory, skip CodeGraph entirely.
+<!-- CODEGRAPH_END -->
 
-**Fall back to grep / Read for:**
+Your budget is shared with any sub-agents you spawn. For review specifically, the highest-leverage use is **blast-radius**, finding what the diff doesn't show:
+
+- **For each non-additive change (signature change, removal, behaviour change):** run `codegraph_explore` naming the symbol; its blast radius gives the callers per file and the tests that cover it. For the complete list of call sites, `codegraph callers <symbol>` in the shell. Cross-check that the diff updates every call site. A symbol the branch renamed or removed is no longer in the index, so search for the old name as text to find a leftover caller. Missed call sites are the highest-cost MUST FIX class because CI catches them late and the developer wastes a rework cycle.
+- **For each new exported type/function:** run `codegraph_explore` naming it, or asking what it does, to check whether a similar symbol already exists. Duplication-of-pattern is a SHOULD FIX: codegraph spots it deterministically where Read + skim is stochastic.
+- **For each touched file's containing package:** run `codegraph files --filter <dir>` in the shell to see the package shape. Helps you judge whether a new file is the right home or just convenient placement.
+
+Also: `codegraph_explore` naming a changed function shows what it calls, through its source and call paths, and a feature-area question gives a structured map when the diff spans many files.
+
+**Use grep / Read only for:**
 
 - The diff itself — read it via `gh pr diff`, not codegraph
 - Comment-only references (codegraph parses code, not comments)
 - String literals — URLs, paths, log messages, `t.Run` test names
 - Documentation files (`docs/`, `CLAUDE.md`) — Read or QMD
-- The developer's *new* code, not yet re-indexed in the canonical repo — read it from the diff
-- Codegraph returned empty when you expected hits — note the gap, then grep
+- A name the branch renamed or removed, searched as text
 
 **Smell phrases that mean you're skipping codegraph for a too-quick review:** *"the diff looks straightforward, no need to check callers"* (the diff doesn't show callers — that's the point), *"I'll trust the developer's tests"* (tests cover what they thought of), *"the spec's reading list names three call sites, that's the full set"* (verify it; specs miss things, especially on refactors).
 
