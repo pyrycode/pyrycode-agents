@@ -68,11 +68,24 @@ The label is the contract for the dispatcher's real-claude gate. Once a ticket c
 
 Recognition is your job here; enforcement is structural, and the dispatcher will not close a labelled ticket that has not passed. Code review is the backstop — it adds the label if you missed it — but by then the design is already fixed, so catching it at refinement is what makes the requirement shape the acceptance criteria.
 
+<!-- CODEGRAPH_START -->
+## CodeGraph
+
+Adapted from the block CodeGraph 1.6.2 writes into agent instruction files (`src/installer/instructions-template.ts`, github.com/colbymchenry/codegraph).
+
+This repository is indexed by CodeGraph. A ticket worktree gets its own copy of the index, and the codegraph server keeps it in step with your edits within about a second. Reach for it BEFORE grep/find or reading files when you need to understand or locate code:
+
+- **MCP tool:** `codegraph_explore` answers most code questions in one call: the relevant symbols' verbatim, line-numbered source, the call paths between them (including dynamic-dispatch hops grep can't follow) and a blast radius of what depends on them. Name a file or symbol in the query to read its current source. If it is listed but deferred, load it by name via tool search.
+- **Shell (always works):** `codegraph explore "<symbol names or question>"` prints the same output. For a complete list of call sites, `codegraph callers <symbol>`; for transitive dependents, `codegraph impact <symbol>`. The shell reads the index without updating it.
+
+Trust codegraph's results; don't re-verify them with grep. Use it instead of Read and grep; use grep only for string literals, comments, docs and your own new code. If a response starts with a staleness banner or flags a file as changed on disk, Read the files it lists. If there is no `.codegraph/` directory, skip CodeGraph entirely.
+<!-- CODEGRAPH_END -->
+
 ## Before Refining
 
 1. Read the existing ticket body — even a one-line idea has signal in it; don't lose user intent during refinement.
 2. Read `docs/knowledge/INDEX.md` for the startup map, then the owning topic and `CODING-STYLE.md`.
-3. For anything refactor-shaped, count call sites before you size it (see § Sizing Guide's call-site line): `mcp__codegraph__codegraph_impact(symbol: "<symbol>")` returns direct call sites plus transitive dependents in one query. Sizing a rename by eye is how oversized tickets reach the architect.
+3. For anything refactor-shaped, count call sites before you size it (see § Sizing Guide's call-site line): `codegraph_explore(query: "<symbol>")` returns the callers per file and the tests in its blast radius, and the shell's `codegraph callers <symbol>` gives the complete list to count. Sizing a rename by eye is how oversized tickets reach the architect.
 
 Optional, when the ticket's area is unfamiliar: `mcp__qmd__query(collection: "pyrycode-docs", query: "<topic>")`, or the package overview at `docs/knowledge/features/<package>.md`. `docs/lessons.md` is frozen (2026-05-11) historical reference; read it only when chasing something specific and old.
 
@@ -114,7 +127,7 @@ If the ticket already has some of these sections, preserve their content unless 
 
 The builder reads the body against a later tree than the one you wrote it against, so a `file.go:315` in a body is stale before it is read. Measured 2026-09-07 on board #1: 45 of the 60 open tickets carried line citations, 311 in all, and every one audited had drifted. The relocation work costs a builder's budget and changes nothing about what gets built.
 
-- **Name the symbol.** Write ``the guard in `trailGate` ``, never `file.go:315`. Give the full path when the basename is ambiguous: `reap.go` and `runner.go` each exist in four places, and three files once cited lines of the wrong one. `codegraph_search` resolves a name on demand and the name is still correct next week.
+- **Name the symbol.** Write ``the guard in `trailGate` ``, never `file.go:315`. Give the full path when the basename is ambiguous: `reap.go` and `runner.go` each exist in four places, and three files once cited lines of the wrong one. `codegraph_explore` resolves a name on demand and the name is still correct next week.
 - **Cite a doc by heading or a distinctive phrase**, never a line number. The 2026-08-31 package-overview split moved every section into a new file and voided every `docs/` line number in the open tickets at once; a heading survived it.
 - **When a measurement matters, pin the commit and say so:** "405 lines at `6707df4d`". A number without a commit is a rumour by next week.
 - **Never write `file.go:NNN`, a range `file.go:120-140`, or a bare `:NNN`.** The builder's plan and code comments follow the same rule, and `make cite-guard` fails the build on the code side. A body that hands the builder a line teaches it the habit the rule exists to stop; upstream measured that a spec carrying dozens of citations produced a developer that wrote 71 of its own (pyrycode #1417).

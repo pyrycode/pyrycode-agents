@@ -13,16 +13,17 @@ ARG GH_VERSION=2.88.1
 ARG CLAUDE_VERSION=2.1.280
 ARG PYRY_VERSION=v0.37.0
 ARG QMD_VERSION=2.1.0
-ARG CODEGRAPH_VERSION=0.6.8
+ARG CODEGRAPH_VERSION=1.6.2
 ARG STATICCHECK_VERSION=2026.1
 ARG CODEX_VERSION=0.159.2
 # Desktop fork only: the Chromium its static visual capture launches.
 # Match the target repo's locked @playwright/test version.
 ARG PLAYWRIGHT_VERSION=1.61.1
 
-# gcc and libc6-dev: `go test -race` needs cgo. g++: codegraph's native
-# SQLite module compiles at npm install; without it codegraph falls back to
-# a slower WASM build. perl: bin/pyry-start's process-group step.
+# gcc and libc6-dev: `go test -race` needs cgo. g++ was for codegraph 0.x's
+# native SQLite module; 1.x installs a bundle with its own Node 24 and
+# built-in SQLite, so it no longer compiles anything. perl: bin/pyry-start's
+# process-group step.
 # bsdextrautils: `column`, which role docs use.
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -110,10 +111,19 @@ RUN mkdir -p /opt/homebrew/bin /Users/juhanailmoniemi/Workspace /Users/juhanailm
 # HOME is a mounted volume (Claude state, transcripts, Go caches, qmd
 # index), so it survives image rebuilds. /work holds the two repositories
 # and the worktree folder beside them.
+#
+# CODEGRAPH_NO_DAEMON: each agent's codegraph MCP server runs in-process and
+# exits with the agent. The default detached per-project daemon would outlive
+# every run, and nothing in this container reaps its exit as PID 1 does not.
+# CODEGRAPH_TELEMETRY=0: codegraph 1.x sends usage statistics by default.
+# Codex starts MCP servers with a cleared environment, so config.toml sets
+# both again for its codegraph server.
 ENV HOME=/home/agent \
     SHELL=/bin/bash \
     GOTOOLCHAIN=local \
     DISABLE_AUTOUPDATER=1 \
+    CODEGRAPH_NO_DAEMON=1 \
+    CODEGRAPH_TELEMETRY=0 \
     PYRY_AUTOMATION_ACCESS=/usr/local/bin/automation-access-shim \
     PATH=/home/agent/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
