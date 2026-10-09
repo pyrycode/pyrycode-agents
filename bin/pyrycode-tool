@@ -7,7 +7,7 @@ tool=${1:?Usage: pyrycode-tool TOOL [ARGS...]}
 shift
 case "$tool" in
   test) cd "$MODULE"; exec go test -race -count=1 ./... "$@" ;;
-  qmd-current) exec node "$MODULE/cmd/qmd-current/setup.mjs" "$@" ;;
+  qmd-current) exec node "$SCRIPT_DIR/../container/qmd-current/setup.mjs" "$@" ;;
   cite-guard|docs-guard|spec-reference-inventory|spec-scaffolding-prune) ;;
   *) echo "Unknown maintenance tool: $tool" >&2; exit 2 ;;
 esac

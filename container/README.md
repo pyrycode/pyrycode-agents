@@ -1,5 +1,9 @@
 # Dispatcher container
 
+Manual current-documentation collection setup and its integration tests are
+documented in [current documentation search setup](../docs/current-docs-search.md).
+Automatic provisioning remains a separate follow-up.
+
 Runs the pyrycode and pyrycode-desktop dispatchers, and every agent they spawn, inside rootless Podman containers on pyrybox instead of on the Mac. Decided 2026-10-03: the Mac's CPU was shared with the mobile pipeline's Gradle builds and test emulators, and verifier gates kept timing out under that load. One image serves both pipelines; `FORK` picks which one a container runs. Any OCI engine builds the image, so the runtime can move to another Linux machine later.
 
 ## What runs where

@@ -5,8 +5,9 @@ import { constants, accessSync, existsSync, mkdirSync, mkdtempSync, readFileSync
 import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
 import { delimiter, dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const usage = 'Usage: node /agents/tools/pyrycode/cmd/qmd-current/setup.mjs [--repo /checkout]\n'
+const usage = 'Usage: node /agents/container/qmd-current/setup.mjs [--repo /checkout]\n'
   + 'Uses QMD_CONFIG_DIR/index.yml (or XDG_CONFIG_HOME/qmd, then ~/.config/qmd).\n'
   + 'Keep QMD_CONFIG_DIR and INDEX_PATH set for subsequent qmd update and qmd embed.';
 
@@ -18,7 +19,7 @@ function setup(args) {
   if (args.length !== 0 && (args.length !== 2 || args[0] !== '--repo' || !args[1])) {
     throw new Error(usage);
   }
-  const repo = args.length ? resolve(args[1]) : process.cwd();
+  const repo = args.length ? resolve(args[1]) : resolve(dirname(fileURLToPath(import.meta.url)), '../../../pyrycode');
   const root = realpathSync(join(repo, 'docs/knowledge'));
   for (const section of ['features', 'decisions']) {
     if (!statSync(join(root, section)).isDirectory()) {

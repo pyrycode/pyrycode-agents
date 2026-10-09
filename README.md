@@ -15,8 +15,11 @@ Run a tool from the product checkout so it reads that checkout:
 Preview is the default. Applying a cleanup remains an explicit maintenance operation.
 Its captured evidence is under `tools/pyrycode/cmd/spec-scaffolding-prune/testdata/`.
 Run `bin/pyrycode-tool test` explicitly to test maintenance tools.
-Those tests use isolated temporary data and the installed QMD CLI.
+Those tests use isolated temporary data.
 They never belong in a product gate.
+
+QMD setup remains in `container/qmd-current`, with its own opt-in Node tests.
+See [current documentation search](docs/current-docs-search.md).
 
 The verifier runs the two guards before `make check`.
 Existing product Make targets delegate here through `AGENTS_REPO_PATH` or a sibling clone.
