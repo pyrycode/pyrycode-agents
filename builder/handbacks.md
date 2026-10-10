@@ -77,18 +77,18 @@ BUG=/tmp/builder-<ticket>/bug.md
 url=$(gh issue create --repo pyrycode/pyrycode \
   --title "<one-line bug summary>" --label bug --body-file "$BUG")
 
-# Add it to board 1 and set Status to Inbox. Resolve the field and option IDs
+# Add it to board 1 and set Status to Backlog. Resolve the field and option IDs
 # each time, because field edits reissue them.
 item_id=$(gh project item-add 1 --owner pyrycode --url "$url" --format json --jq '.id')
 project_id=$(gh project view 1 --owner pyrycode --format json --jq '.id')
 field_json=$(gh project field-list 1 --owner pyrycode --format json)
 status_field_id=$(echo "$field_json" | jq -r '.fields[] | select(.name == "Status") | .id')
-inbox_option_id=$(echo "$field_json" | jq -r '.fields[] | select(.name == "Status") | .options[] | select(.name == "Inbox") | .id')
+backlog_option_id=$(echo "$field_json" | jq -r '.fields[] | select(.name == "Status") | .options[] | select(.name == "Backlog") | .id')
 gh project item-edit --project-id "$project_id" --id "$item_id" \
-  --field-id "$status_field_id" --single-select-option-id "$inbox_option_id"
+  --field-id "$status_field_id" --single-select-option-id "$backlog_option_id"
 ```
 
-Inbox is for human triage, and the operator promotes the bug to Backlog when it is ready. Commit the test with its skip reason and the bug link in its comment, then open your PR as usual. The ticket flows through verification normally.
+Put the bug in Backlog so the refiner can pick it up without human promotion. Under Codex, use `issue-create`, `board-add` and `board-status ISSUE "Backlog"`. Use Inbox only when the ticket needs a specific decision or missing input from the operator, and comment with that need. An unknown technical cause is investigation work for Backlog. Commit the test with its skip reason and the bug link in its comment, then open your PR as usual. The ticket flows through verification normally.
 
 If even the failing test cannot be written without the bug fix, which is rare, comment on your ticket with a one-line explanation and add `needs-rework:refiner`, so the refiner can sequence the bug as a blocker.
 
