@@ -44,6 +44,8 @@ When sizing, building or reviewing code, use the target's `docs/knowledge/featur
 
 ## GitHub API budget
 
+Managed runs use the shared GitHub connection. Use the installed `gh` command and preserve its inherited `GH_CONFIG_DIR`. Do not clear that setting or use another API client to bypass the shared allowance. If the connection is unavailable, retain local results and report the temporary failure.
+
 Every dispatcher, agent and interactive session shares one GitHub account and its 5000 GraphQL points an hour. When they run out, every `gh` call in the pipeline fails until the hourly reset.
 
 - To learn a ticket's board column, read the ticket: `gh issue view --repo pyrycode/pyrycode <n> --json projectItems` costs about 2 points. Listing the board costs about 100 points a page, and repeated listings drained the budget on 2026-09-22. List it at most once a run, and only when you need every card.
