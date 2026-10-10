@@ -19,8 +19,10 @@ AGENTS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 # Parse launcher options before touching locks or installing dependencies.
 # Stop at the dispatcher command so its arguments remain literal.
 RUNNER_OVERRIDE=""
+MANAGED_OVERRIDE=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    --managed) MANAGED_OVERRIDE=1; shift; continue ;;
     --runner)
       if [ "$#" -lt 2 ]; then
         echo "error: --runner requires claude or codex" >&2
@@ -34,7 +36,7 @@ while [ "$#" -gt 0 ]; do
       shift
       ;;
     -h|--help)
-      echo "Usage: pyry-start [--runner claude|codex] [dispatcher arguments...]"
+      echo "Usage: pyry-start [--managed] [--runner claude|codex] [dispatcher arguments...]"
       echo "The runner option overrides the saved setting for this launch only."
       exit 0
       ;;
@@ -57,6 +59,17 @@ fi
 if [ ! -d "$AGENTS_DIR/dispatcher" ]; then
   echo "error: dispatcher submodule missing at $AGENTS_DIR/dispatcher" >&2
   echo "       run: cd $AGENTS_DIR && git submodule update --init" >&2
+  exit 1
+fi
+
+# Detect configured managed mode without reading or printing credential values.
+MANAGED_LAUNCH="$MANAGED_OVERRIDE"
+if [ "${PYRY_MANAGED:-}" = 1 ] || [ -n "${PYRY_MANAGER_URL:-}${PYRY_MANAGER_TOKEN:-}" ] ||
+   grep -Eq '^(PYRY_MANAGED=1|PYRY_MANAGER_(URL|TOKEN)=.+)' "$AGENTS_DIR/.env" 2>/dev/null; then
+  MANAGED_LAUNCH=1
+fi
+if [ -n "$MANAGED_LAUNCH" ] && [ ! -f "$AGENTS_DIR/dispatcher/src/managed-dispatch.ts" ]; then
+  echo "error: managed mode requires a dispatcher with machine-manager support" >&2
   exit 1
 fi
 
@@ -207,8 +220,8 @@ trap "restore_tty; rm -f '$LOCK_FILE'" EXIT
 # Apply the explicit runner inside the existing exec wrapper, after op has
 # loaded .env. No extra process or shell quoting layer is introduced.
 "$AUTOMATION_ACCESS" op run --env-file="$AGENTS_DIR/.env" -- \
-  /usr/bin/perl -e 'delete $ENV{OP_SERVICE_ACCOUNT_TOKEN}; my $runner = shift @ARGV; $ENV{PYRY_AGENT_RUNNER} = $runner if length $runner; setpgrp(0, 0) or die "setpgrp: $!\n"; open(STDIN, "<", "/dev/null"); exec @ARGV or die "exec: $!\n";' -- \
-  "$RUNNER_OVERRIDE" "$NODE_BIN" --import tsx src/dispatch-bin.ts "$@" &
+  /usr/bin/perl -e 'delete $ENV{OP_SERVICE_ACCOUNT_TOKEN}; my $runner = shift @ARGV; my $managed = shift @ARGV; $ENV{PYRY_MANAGED} = 1 if length $managed; $ENV{PYRY_AGENT_RUNNER} = $runner if length $runner; setpgrp(0, 0) or die "setpgrp: $!\n"; open(STDIN, "<", "/dev/null"); exec @ARGV or die "exec: $!\n";' -- \
+  "$RUNNER_OVERRIDE" "$MANAGED_OVERRIDE" "$NODE_BIN" --import tsx src/dispatch-bin.ts "$@" &
 LAUNCH_PID=$!
 
 # Find the dispatcher's own PID for the lock: the process whose command
@@ -297,6 +310,7 @@ if [ -n "$RESTART" ]; then
   else
     set -- -- "$@"
   fi
+  if [ -n "$MANAGED_OVERRIDE" ]; then set -- --managed "$@"; fi
   exec "$SCRIPT_DIR/pyry-start" "$@"
 fi
 exit "$STATUS"
