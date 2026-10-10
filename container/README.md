@@ -22,6 +22,10 @@ Containers run with `--userns=keep-id`, so they have exactly the pyry account's 
 
 ## Steps
 
+For shared capacity and ticket ownership across computers, use the opt-in
+[managed container setup](managed/README.md). It connects both containers
+to one host manager. The steps below describe the existing independent mode.
+
 All commands below run on the Mac from this folder unless marked pyrybox.
 
 1. **Build:** `./deploy.sh`. It copies this folder, installs both settings files, builds the image and prints tool versions. It starts nothing.

@@ -17,6 +17,8 @@ class RunnerOptionTests(unittest.TestCase):
             root = Path(directory)
             (root / "bin").mkdir()
             (root / "dispatcher").mkdir()
+            (root / "dispatcher/src").mkdir()
+            (root / "dispatcher/src/managed-dispatch.ts").touch()
             (root / "target").mkdir()
             fake = root / "fake"
             fake.mkdir()
@@ -49,7 +51,7 @@ os.execv(command[0],command)
                 "node": '''#!/usr/bin/env python3
 import json,os,sys
 from pathlib import Path
-Path(os.environ['TEST_ROOT'],'result').write_text(json.dumps({'runner':os.environ.get('PYRY_AGENT_RUNNER'),'args':sys.argv[1:],'service_token_present':'OP_SERVICE_ACCOUNT_TOKEN' in os.environ}))
+Path(os.environ['TEST_ROOT'],'result').write_text(json.dumps({'managed':os.environ.get('PYRY_MANAGED'),'runner':os.environ.get('PYRY_AGENT_RUNNER'),'args':sys.argv[1:],'service_token_present':'OP_SERVICE_ACCOUNT_TOKEN' in os.environ}))
 ''',
                 "pgrep": "#!/bin/sh\nexit 1\n",
                 "sleep": "#!/bin/sh\nexit 0\n",
@@ -68,6 +70,13 @@ Path(os.environ['TEST_ROOT'],'result').write_text(json.dumps({'runner':os.enviro
                                  stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=10)
             result = json.loads((root / "result").read_text()) if (root / "result").exists() else None
             return run, result, (root / "install").exists()
+
+    def test_managed_mode_is_consumed_and_preserved_by_restart(self):
+        for entry in ["pyry-start", "pyry-restart"]:
+            run, result, _ = self.launch(["--managed", "--runner", "codex"], entry=entry)
+            self.assertEqual(run.returncode, 0, run.stderr)
+            self.assertEqual(result["managed"], "1")
+            self.assertEqual(result["args"], ["--import", "tsx", "src/dispatch-bin.ts"])
 
     def test_codex_overrides_saved_claude(self):
         run, result, _ = self.launch(["--runner", "codex"])
@@ -138,7 +147,7 @@ from pathlib import Path
 root = Path(os.environ['TEST_ROOT'])
 log = root / 'launches'
 with log.open('a') as f:
-    f.write(json.dumps({'runner': os.environ.get('PYRY_AGENT_RUNNER'), 'args': sys.argv[1:]}) + '\\n')
+    f.write(json.dumps({'managed': os.environ.get('PYRY_MANAGED'), 'runner': os.environ.get('PYRY_AGENT_RUNNER'), 'args': sys.argv[1:]}) + '\\n')
 if len(log.read_text().splitlines()) > 1:
     sys.exit(0)
 received = []
@@ -159,6 +168,8 @@ sys.exit(3)
             root = Path(directory)
             for name in ["bin", "dispatcher", "target", "fake"]:
                 (root / name).mkdir()
+            (root / "dispatcher/src").mkdir()
+            (root / "dispatcher/src/managed-dispatch.ts").touch()
             shutil.copy2(Path(__file__).with_name("pyry-start"), root / "bin/pyry-start")
             (root / ".env").write_text("PYRY_AGENT_RUNNER=claude\n")
             scripts = {
@@ -238,7 +249,7 @@ os.execv(command[0], command)
 
     def test_ctrl_r_drains_then_starts_again_with_same_arguments(self):
         status, output, launches, signals, locked, lflag = self.run_with_keys(
-            ["--runner", "codex", "inbox", "literal $value"],
+            ["--managed", "--runner", "codex", "inbox", "literal $value"],
             [("Ctrl-R drains and restarts", self.release),
              ("Ctrl-R drains and restarts", self.key(b"\x12"))])
         self.assertEqual(status, 0, output)
@@ -248,6 +259,7 @@ os.execv(command[0], command)
         self.assertEqual(len(launches), 2, output)
         for launch in launches:
             self.assertEqual(launch["runner"], "codex")
+            self.assertEqual(launch["managed"], "1")
             self.assertEqual(launch["args"][-2:], ["inbox", "literal $value"])
         self.assertFalse(locked)
         self.assertTrue(lflag & termios.ICANON and lflag & termios.ECHO, "terminal mode not restored")

@@ -1,0 +1,13 @@
+{
+  "machine": "pyrybox",
+  "heavyLimit": 1,
+  "combinedLimit": 2,
+  "claimsUrl": "http://127.0.0.1:7430",
+  "claimsTokenEnv": "FLEET_PYRYBOX_TOKEN",
+  "socketPath": "socket/manager.sock",
+  "operatorTokenEnv": "FLEET_LOCAL_OPERATOR_TOKEN",
+  "projects": [
+    { "repo": "pyrycode/pyrycode", "tokenEnv": "FLEET_CORE_TOKEN" },
+    { "repo": "pyrycode/pyrycode-desktop", "tokenEnv": "FLEET_DESKTOP_TOKEN" }
+  ]
+}

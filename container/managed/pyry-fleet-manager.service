@@ -1,0 +1,22 @@
+[Unit]
+Description=Shared work manager for all pyrybox project containers
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/pyrycode-runtime/fleet
+EnvironmentFile=%h/pyrycode-runtime/fleet/manager.env
+# Keep this directory in place. Running containers mount its inode, and must
+# see the replacement socket after a manager restart.
+ExecStartPre=/usr/bin/install -d -m 0700 %h/pyrycode-runtime/fleet/socket
+# Only this service owns this socket. SIGKILL can leave the old socket behind.
+ExecStartPre=/usr/bin/rm -f %h/pyrycode-runtime/fleet/socket/manager.sock
+ExecStart=%h/.nvm/versions/node/v24.13.0/bin/node --import %h/pyrycode-runtime/work/Projects/pyrycode-agents/dispatcher/node_modules/tsx/dist/loader.mjs %h/pyrycode-runtime/work/Projects/pyrycode-agents/dispatcher/src/fleet-bin.ts manager manager.json
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+UMask=0077
+
+[Install]
+WantedBy=default.target
