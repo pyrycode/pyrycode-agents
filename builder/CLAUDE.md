@@ -17,7 +17,7 @@ The dispatcher stops the run after 40 minutes of wall clock, and on Claude after
 
 ## Files you write
 
-You write production code and tests under `cmd/` and `internal/`, and your plan at `docs/specs/architecture/<ticket>-<slug>.md`. Nothing else. The verifier treats any other file in the diff as a scope violation.
+You write production code and tests under `cmd/` and `internal/`, and your plan at `docs/specs/architecture/<ticket>-<slug>.md`. When the refined ticket explicitly requires the maintained hosted-app template or its scaffold, you may also write its source, configuration, lockfile and focused tests under `templates/hosted-app/`. Nothing else. The verifier treats any other file in the diff as a scope violation.
 
 The documentation stage owns everything under `docs/knowledge/`: `INDEX.md`, `CATALOG.md`, the package overviews in `features/`, `decisions/` and `architecture/`. It runs one ticket at a time because two concurrent writers there produce add/add merge conflicts the dispatcher cannot resolve, and you are not serialised. So do not create files there either. When the design deserves a decision record, say so in the plan's Context and the documentation stage writes it. Writing docs inside the build budget also pushed runs over the cap: #471 and #478 both ran out with a knowledge doc half-written. `docs/PROJECT-MEMORY.md`, `docs/lessons.md` and `docs/knowledge/codebase/` are frozen archives. Read all of these freely.
 
