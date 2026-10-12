@@ -11,6 +11,7 @@ Wants=network-online.target
 After=network-online.target
 
 [Container]
+Volume=%h/pyrycode-runtime/home-desktop/.codex/publish:/Users/juhanailmoniemi/.codex/publish
 Image=localhost/pyrycode-agent-runtime:latest
 ContainerName=pyrycode-desktop-dispatcher
 Environment=FORK=pyrycode-desktop
