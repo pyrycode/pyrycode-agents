@@ -11,6 +11,7 @@ Wants=network-online.target
 After=network-online.target
 
 [Container]
+Volume=%h/pyrycode-runtime/home/.codex/publish:/Users/juhanailmoniemi/.codex/publish
 Image=localhost/pyrycode-agent-runtime:latest
 ContainerName=pyrycode-dispatcher
 UserNS=keep-id
