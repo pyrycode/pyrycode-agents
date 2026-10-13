@@ -6,7 +6,7 @@
 # 2026-10-03; bump them here, never by letting a tool self-update.
 FROM docker.io/library/ubuntu:24.04
 
-ARG GO_VERSION=1.26.2
+ARG GO_VERSION=1.26.9
 ARG NODE_VERSION=25.8.0
 ARG PNPM_VERSION=10.32.1
 ARG GH_VERSION=2.88.1
