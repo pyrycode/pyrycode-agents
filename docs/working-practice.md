@@ -42,6 +42,16 @@ The dispatcher owns the mechanical gates, as each role file describes. When you 
 
 When sizing, building or reviewing code, use the target's `docs/knowledge/features/development-verification.md`. It covers source-search limits, validation boundaries, protocol tests, capture evidence and artifact survival. Read the section you need. Current code wins over an old observation.
 
+## Workflow authority
+
+Since 2026-10-13 the orchestrator's central database owns every ticket's workflow: board column, order, labels, open or closed state, blocked-by links and the comments the pipeline posts. The GitHub board and labels only display that state. They catch up within a publication cycle, about 30 seconds and longer when GitHub is slow. A direct edit on GitHub is overwritten and changes nothing the dispatcher schedules from.
+
+- Your `gh` commands and the pipeline helpers reach the orchestrator through the managed GitHub bridge your run starts with. Use them as these instructions describe. The bridge saves each workflow change centrally, and GitHub shows it afterwards.
+- Never route around the bridge. Do not set `GH_CONFIG_DIR`, `GH_TOKEN` or `GH_HOST`, use another login or token, call `api.github.com` with `curl`, or ask a person to move a card on the board. The pipeline helpers refuse board, order, blocker and sub-issue changes when the bridge is missing.
+- Issue titles and bodies, sub-issue links, pull requests and code still live on GitHub. The orchestrator reads them back.
+- When a workflow command reports an error, read the ticket back before you retry: `gh issue view --repo pyrycode/pyrycode N --json labels,state,projectItems` shows what the orchestrator holds. The change may already be saved. Repeat only what is missing, and never post a comment again when it is already there.
+- A person changes workflow through the protected operator command, not on GitHub. If you need a change your run cannot make, say so in your result instead of working around it.
+
 ## GitHub API budget
 
 Managed runs use the shared GitHub connection. Use the installed `gh` command and preserve its inherited `GH_CONFIG_DIR`. Do not clear that setting or use another API client to bypass the shared allowance. If the connection is unavailable, retain local results and report the temporary failure.
