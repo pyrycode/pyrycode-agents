@@ -271,6 +271,7 @@ case "${1:-run}" in
   run)
     shift || true
     setup
+    CI=true pnpm --dir "$AGENTS/dispatcher" install
     start_display
     export TARGET_REPO_PATH="$TARGET"
     exec "$AGENTS/bin/pyry-start" "$@"
