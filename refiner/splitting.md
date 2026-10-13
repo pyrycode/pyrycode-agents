@@ -24,6 +24,8 @@ Depth is read from the sub-issue links, so always link each child to its parent 
 
 ## Steps
 
+Every board move, order change, blocker, label and close in a split changes orchestrator workflow through the managed GitHub bridge (see Workflow authority in `docs/working-practice.md`). Until the next publication cycle the GitHub board can show a new child in Inbox or at the end of its column. Confirm the column, labels and state by reading the child back with `gh issue view --repo pyrycode/pyrycode CHILD --json labels,state,projectItems`, which shows what the orchestrator holds, not by looking at the board. That read does not show blockers or order. Read blockers with `/Users/juhanailmoniemi/.codex/bin/pyrycode-pipeline-action relations CHILD`. No read confirms order: the position command succeeding is the confirmation, and the board shows it after publication. Read back before repeating a step that reported an error. On 2026-10-13 the bridge saved both children of Mobile #1984 in Backlog, in the right place, while every `board-status` call reported a failure. Sub-issue links and issue bodies stay on GitHub.
+
 **1. Create one issue per concern.** Use `gh issue create`, with a body file outside the checkout.
 
 **2. Put each child on the board in Backlog, right after the parent.** Children have already been triaged, so they go to Backlog, not Inbox. `gh project item-add 1 --owner pyrycode --url <issue-url>` adds the item but does not set its status, and an item without a status is invisible to every column query, so set Status to Backlog explicitly.
