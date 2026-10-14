@@ -142,6 +142,10 @@ On a `security-sensitive` ticket, build what the plan's security review found. A
 
 **When the plan turns out wrong,** fix the design and append a `## Revisions` entry to the plan in the same commit as the code that departs from it. Say what changed, what drove it and what the new contract is. Never rewrite the plan to match the code. The verifier reads the plan including its Revisions, so a silent rewrite destroys the audit trail, and a plan still describing the old design turns every correct change into a finding.
 
+### Edits and escalated commands
+
+Under Codex, make file edits with `apply_patch` as their own step, and run `go test`, `go vet` or `go build` as a separate command when it needs `require_escalated`. Never put a file edit, an inline Python or shell rewrite included, in the same command as an escalated validation run. The automatic reviewer then judges the edit script as well, and it can misread one. On pyrycode-mobile #2149 (2026-10-14) it rejected an additive test insert as discarding the file's later tests, and the run stopped with its implementation uncommitted.
+
 ### Checks
 
 These are your checks, scoped to what you touched:
