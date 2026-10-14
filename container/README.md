@@ -143,6 +143,24 @@ The service runs the script from the live checkout, so a merged change to the sc
 
 - **Role instructions:** the entrypoint fast-forwards the agents checkout on every start, so a restart picks up merged changes to `main`.
 - **Tool versions:** change the `ARG` lines in `Containerfile`, run `./deploy.sh`, then on pyrybox restart each running service.
+- **The live tests' daemon:** see the next section. A new pyry release needs no image rebuild and no restart.
+
+## Test daemon
+
+The live tests that drive a released daemon read it from a host folder, not from the image. Since 2026-10-14 every agent container on pyrybox, build-hp-1 and build-fractal-2 mounts `~/pyrycode-runtime/test-daemon` read-only at `/opt/pyry-test-daemon`. The folder holds a `pyry` link, a `VERSION` file and `versions/<X.Y.Z>/pyry`.
+
+- **Desktop** sets `PYRY_BIN` and `PYRY_HEALTH_DAEMON_CMD` to `/opt/pyry-test-daemon/pyry`, so the real-claude Playwright suite and the "Test daemon version" health check use it. A release build carries its `vcs.revision`, which `go version -m` reads; the image's `go install` copy does not.
+- **Core** builds the daemon from the tree under test (`internal/e2e/harness.go`), and **Mobile** builds it from `PYRYCODE_SRC` (`scripts/android-test-gate.py`). Both stay that way: they test unreleased daemon code on purpose. **Relay** has no daemon test.
+- **Fallback:** the image's `/usr/local/bin/pyry` stays and is refreshed at the next planned rebuild. Each unit's `ExecStartPre` links an empty folder's `pyry` to `/usr/local/bin/pyry`, which resolves to the image's copy inside the container. `test-daemon-update.sh image` does the same on purpose.
+
+Install a release on all three hosts, from pyrybox:
+
+```bash
+~/pyrycode-runtime/test-daemon-update.sh v0.40.0 --all   # or: latest --all
+~/pyrycode-runtime/test-daemon-update.sh status --all
+```
+
+Each host downloads the release itself and checks it the way `pyry update` does: the Ed25519 signature on `checksums.txt` against the key in `cmd/pyry/update.go`, then the tarball's SHA-256. It installs the binary under `versions/`, then renames the `pyry` link over the old one, so a running test keeps its binary and a new one never sees a partial file. It keeps the three newest versions. `test-daemon-update.sh v0.39.0 --all` rolls back. The script is `container/test-daemon-update.sh`, copied to `~/pyrycode-runtime/` on each host; it must be copied again after a change.
 
 ## Builder live repairs
 
