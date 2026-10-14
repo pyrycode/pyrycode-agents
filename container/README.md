@@ -162,6 +162,10 @@ Install a release on all three hosts, from pyrybox:
 
 Each host downloads the release itself and checks it the way `pyry update` does: the Ed25519 signature on `checksums.txt` against the key in `cmd/pyry/update.go`, then the tarball's SHA-256. It installs the binary under `versions/`, then renames the `pyry` link over the old one, so a running test keeps its binary and a new one never sees a partial file. It keeps the three newest versions. `test-daemon-update.sh v0.39.0 --all` rolls back. The script is `container/test-daemon-update.sh`, copied to `~/pyrycode-runtime/` on each host; it must be copied again after a change.
 
+## Codex test login
+
+The live gate's Codex scenarios use a Codex sign-in of their own, separate from the agents' home. Since 2026-10-14 the desktop container mounts `~/pyrycode-runtime/codex-test-home` read-write at `/home/agent/.local/share/pyrycode-codex-test-home`, and `forks/pyrycode-desktop.env` sets `PYRY_CODEX_CAPTURE_HOME` to that path and `PYRY_CODEX_CAPTURE_BIN` to `/usr/local/bin/codex`. Sign in or check it on the host with `~/pyrycode-runtime/codex-test-login.sh`. Never copy the folder and never point it at `~/.codex` or `~/.pyry`: renewal keys are single use, so two live runs must not use it at once. The pyrycode container does not have it. The mobile fork's container and env are not in this repository.
+
 ## Builder live repairs
 
 `pyrycode-dev-agents-token` arrives as `PYRY_DEV_AGENTS_TOKEN`. It is the separate service account that reads only the Dev agents vault. The dispatcher gives it only to builders as `OP_SERVICE_ACCOUNT_TOKEN`. The main Automation account never enters the container. The image includes the 1Password CLI so the targeted test launcher can fetch the Claude login in memory. Account credentials are removed from the test child after the fetch.

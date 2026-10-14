@@ -21,6 +21,7 @@ Volume=%h/pyrycode-runtime/work:/work
 Volume=%h/pyrycode-runtime/home-desktop:/home/agent
 Volume=%h/pyrycode-runtime/config-desktop:/config:ro
 Volume=%h/pyrycode-runtime/test-daemon:/opt/pyry-test-daemon:ro
+Volume=%h/pyrycode-runtime/codex-test-home:/home/agent/.local/share/pyrycode-codex-test-home
 Secret=pyrycode-github-token,type=env,target=GITHUB_TOKEN
 Secret=pyrycode-claude-token,type=env,target=CLAUDE_CODE_OAUTH_TOKEN
 Secret=pyrycode-dev-agents-token,type=env,target=PYRY_DEV_AGENTS_TOKEN
