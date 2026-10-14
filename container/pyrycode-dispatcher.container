@@ -19,6 +19,7 @@ RunInit=true
 Volume=%h/pyrycode-runtime/work:/work
 Volume=%h/pyrycode-runtime/home:/home/agent
 Volume=%h/pyrycode-runtime/config:/config:ro
+Volume=%h/pyrycode-runtime/test-daemon:/opt/pyry-test-daemon:ro
 Secret=pyrycode-github-token,type=env,target=GITHUB_TOKEN
 Secret=pyrycode-claude-token,type=env,target=CLAUDE_CODE_OAUTH_TOKEN
 Secret=pyrycode-dev-agents-token,type=env,target=PYRY_DEV_AGENTS_TOKEN
@@ -29,6 +30,10 @@ PodmanArgs=--cpus=6 --stop-timeout=3600
 Exec=run
 
 [Service]
+# Live tests' daemon: ~/pyrycode-runtime/test-daemon, swapped by
+# test-daemon-update.sh without a restart. An empty folder gets a link to
+# the image's own pyry, so the mount never hides a missing daemon.
+ExecStartPre=-/bin/sh -c 'd=%h/pyrycode-runtime/test-daemon; mkdir -p "$$d"; [ -e "$$d/pyry" ] || [ -L "$$d/pyry" ] || { ln -s /usr/local/bin/pyry "$$d/pyry"; echo image > "$$d/VERSION"; }'
 # Shares one 16 GB memory cap with the other agent container.
 Slice=pyrycode-agents.slice
 Restart=on-failure
