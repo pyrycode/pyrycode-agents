@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "codeBuildingAgents": 1,
+  "separateDisplays": true,
+  "interactiveHeavyPerHost": 1,
+  "projectHeavyLimits": {
+    "pyrycode/pyrycode-mobile": 1
+  },
+  "idleCacheMaxBytes": 10737418240,
+  "backupIntervalSeconds": 300,
+  "providerPacing": "keep-current",
+  "unattendedPolicy": "isolated",
+  "env": {}
+}
