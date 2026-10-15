@@ -86,14 +86,16 @@ Path(os.environ['TEST_ROOT'],'result').write_text(json.dumps({'managed':os.envir
             run, result, _ = self.launch(["--managed", "--runner", "codex"], entry=entry)
             self.assertEqual(run.returncode, 0, run.stderr)
             self.assertEqual(result["managed"], "1")
-            self.assertEqual(result["args"], ["--import", "tsx", "src/dispatch-bin.ts"])
+            self.assertEqual(result["args"][2:], ["--import", "tsx", "src/dispatch-bin.ts"])
+            self.assertTrue(result["args"][1].endswith("/bin/gate-defaults.mjs"))
 
     def test_codex_overrides_saved_claude(self):
         run, result, _ = self.launch(["--runner", "codex"])
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertEqual(result["runner"], "codex")
         self.assertFalse(result["service_token_present"])
-        self.assertEqual(result["args"], ["--import", "tsx", "src/dispatch-bin.ts"])
+        self.assertEqual(result["args"][2:], ["--import", "tsx", "src/dispatch-bin.ts"])
+        self.assertTrue(result["args"][1].endswith("/bin/gate-defaults.mjs"))
 
     def test_claude_overrides_saved_codex(self):
         run, result, _ = self.launch(["--runner=claude"], saved="codex")

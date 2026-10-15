@@ -36,3 +36,17 @@ Use `bin/pyry-start --managed` after configuring the machine manager. The flag a
 Set `PYRY_MANAGER_URL`, `PYRY_MANAGER_TOKEN` and the role resource classes in the existing secret environment. Build agents default to medium, refinement and documentation agents to light, and other roles to heavy. Documentation remains limited to one running agent per board across computers. Keep `PYRY_AUTOCURATE_MEMORY=0`. The manager applies a heavy limit and a combined heavy-plus-medium limit across this computer's projects. Light agents consume neither limit. Ticket ownership persists across computers until manually freed.
 
 See the shared [setup and recovery guide](dispatcher/docs/machine-manager.md). Drain old dispatchers and disable independent watcher takeover before sharing a board. The examples contain the approved starting limits. Project order, paths and credentials still need local configuration.
+
+## Report Core check tiers separately
+
+The existing launcher loads tracked gate-tiers.json after authentication. It expands
+only the exact make check command into vet, race-enabled unit tests, staticcheck,
+substrate guard and race-enabled end-to-end tests. The cite guard, docs guard, build
+and custom commands remain required. JSON output gives each test tier its own
+retained baseline diagnostics. Unknown compound commands are left unchanged.
+
+No checked-in dispatcher pin changes. Roll out the scoped inherited-failure policy
+from agent-dispatcher first. Configure approved exceptions separately. Missing or
+expired approval keeps a failing tier red. Required acceptance cases and the
+Desktop 1908 protocol migration remain required. Check every tier in the first
+approved native run before treating the split as equivalent to make check.
