@@ -1,0 +1,16 @@
+{
+  "pyrybox": {},
+  "build-hp-1": {},
+  "build-fractal-2": {
+    "projects": {
+      "pyrycode/pyrycode-desktop": {
+        "env": {
+          "PW_WORKERS": "2"
+        }
+      }
+    }
+  },
+  "macbook": {
+    "unattendedPolicy": "native-only"
+  }
+}
