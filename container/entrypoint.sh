@@ -6,6 +6,7 @@
 #   pyry-container smoke   setup, then prove GitHub and Claude logins work
 #   pyry-container codex-login  one-time ChatGPT device login for Codex
 #   pyry-container run     setup, then start the dispatcher (the default)
+#   pyry-container shell   a shell with the desktop fork's display and secret service
 #
 # Every step is idempotent. Only the indexes are slow. They are built once
 # (and codegraph's again after a codegraph upgrade), then the dispatcher
@@ -223,6 +224,103 @@ start_display() {
   fi
 }
 
+# Desktop fork: a Secret Service for Electron's safeStorage. On Linux,
+# safeStorage keeps its key in the Secret Service over D-Bus, and Chromium
+# only looks for one when the desktop is a recognised one. With neither it
+# falls back to basic_text, which the app refuses, so packaged-encryption
+# tests could not run here. This starts a session bus and gnome-keyring with
+# its login keyring unlocked by a random password that is never stored or
+# printed. The keyring and its sockets live in /tmp, so every container start
+# begins with an empty keyring and nothing reaches the home volume. Gates and
+# agents inherit DBUS_SESSION_BUS_ADDRESS and XDG_CURRENT_DESKTOP; Codex
+# builders with the restricted live-test environment get them through
+# PYRY_AGENT_SHELL_ENV in forks/pyrycode-desktop.env. A failure only warns:
+# safeStorage then reports encryption unavailable, and the app's own
+# fail-closed check applies.
+#
+# The bus has no service activation. With the stock session config, a
+# client reaching an absent keyring auto-starts gnome-keyring, which then
+# waits forever on a password prompt nobody can answer; that hung a test run
+# on 2026-10-15. Without activation a missing keyring fails at once.
+SECRET_BUS=/tmp/pyry-session-bus
+SECRET_DIR=/tmp/pyry-secret-service
+
+secret_service_ready() {
+  printf ok | timeout 3 secret-tool store --label=pyry-container-probe pyry-container probe >/dev/null 2>&1 \
+    && [ "$(timeout 3 secret-tool lookup pyry-container probe 2>/dev/null)" = ok ] \
+    && timeout 3 secret-tool clear pyry-container probe >/dev/null 2>&1
+}
+
+session_bus_alive() {
+  timeout 3 dbus-send --session --print-reply --dest=org.freedesktop.DBus /org/freedesktop/DBus \
+    org.freedesktop.DBus.Peer.Ping >/dev/null 2>&1
+}
+
+secret_service_owned() {
+  timeout 3 dbus-send --session --print-reply --dest=org.freedesktop.DBus /org/freedesktop/DBus \
+    org.freedesktop.DBus.NameHasOwner string:org.freedesktop.secrets 2>/dev/null | grep -q 'boolean true'
+}
+
+# $1 is "fresh" on the run path, the only one allowed to clear a dead bus or
+# keyring. A shell in a running container may time out under load; it must
+# never take the running dispatcher's bus or keyring away, so it only warns.
+start_secret_service() {
+  [ "$FORK" = pyrycode-desktop ] || return 0
+  local fresh="${1:-}"
+  export DBUS_SESSION_BUS_ADDRESS="unix:path=$SECRET_BUS"
+  export XDG_CURRENT_DESKTOP="${XDG_CURRENT_DESKTOP:-GNOME}"
+  mkdir -p -m 0700 "$SECRET_DIR" "$SECRET_DIR/data" "$SECRET_DIR/run"
+  # A `podman restart` keeps /tmp, so a socket can outlive its bus. Test the
+  # bus itself, and clear a dead one's socket before starting another.
+  if [ -S "$SECRET_BUS" ] && [ "$fresh" != fresh ] && ! session_bus_alive; then
+    log "session bus not answering; a shell leaves it alone (restart the container to reset it)"
+    return 0
+  fi
+  if ! session_bus_alive; then
+    rm -f "$SECRET_BUS" || true
+    cat > "$SECRET_DIR/session.conf" <<CONF
+<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig>
+  <type>session</type>
+  <listen>unix:path=$SECRET_BUS</listen>
+  <auth>EXTERNAL</auth>
+  <policy context="default">
+    <allow send_destination="*" eavesdrop="true"/>
+    <allow eavesdrop="true"/>
+    <allow own="*"/>
+  </policy>
+</busconfig>
+CONF
+    dbus-daemon --config-file="$SECRET_DIR/session.conf" --fork --nopidfile \
+      >"$SECRET_DIR/dbus.log" 2>&1 || log "session D-Bus did not start; see $SECRET_DIR/dbus.log"
+  fi
+  if ! secret_service_owned; then
+    if [ "$fresh" != fresh ] && [ -n "$(ls -A "$SECRET_DIR/data" 2>/dev/null)" ]; then
+      log "keyring not answering; a shell leaves it alone (restart the container to reset it)"
+      return 0
+    fi
+    # A keyring left by an earlier start is locked with a password nobody
+    # has any more. Start from an empty one.
+    rm -rf "$SECRET_DIR/data" || true
+    mkdir -p -m 0700 "$SECRET_DIR/data" || true
+    head -c 32 /dev/urandom | base64 -w0 \
+      | XDG_DATA_HOME="$SECRET_DIR/data" XDG_RUNTIME_DIR="$SECRET_DIR/run" \
+          timeout 20 gnome-keyring-daemon --unlock --components=secrets >/dev/null 2>"$SECRET_DIR/keyring.log" \
+      || true
+  fi
+  # The daemon forks before it has claimed its bus name, so give it a moment.
+  local _
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    if secret_service_ready; then
+      log "secret service ready: gnome-keyring, unlocked throwaway login keyring"
+      return 0
+    fi
+    sleep 0.5
+  done
+  log "secret service unavailable; Electron safeStorage will not encrypt (see $SECRET_DIR)"
+}
+
 setup() {
   load_config
   require_secrets
@@ -238,7 +336,8 @@ check() {
   local tool
   for tool in "git --version" "go version" "node --version" "pnpm --version" \
               "gh --version" "op --version" "claude --version" "pyry --version" "qmd --version" \
-              "codegraph --version" "codex --version" "staticcheck -version" "perl -e print(\$^V)"; do
+              "codegraph --version" "codex --version" "staticcheck -version" "perl -e print(\$^V)" \
+              "gnome-keyring-daemon --version"; do
     printf '%-20s %s\n' "${tool%% *}" "$($tool 2>&1 | head -1)"
   done
   for tool in GITHUB_TOKEN CLAUDE_CODE_OAUTH_TOKEN DISCORD_WEBHOOK_URL PYRY_DEV_AGENTS_TOKEN; do
@@ -259,9 +358,10 @@ case "${1:-run}" in
   setup) setup ;;
   smoke) smoke ;;
   shell)
-    # Debugging aid: a shell with the fork's display running.
+    # Debugging aid: a shell with the fork's display and secret service running.
     shift || true
     start_display
+    start_secret_service
     exec bash "$@"
     ;;
   codex-login)
@@ -273,6 +373,7 @@ case "${1:-run}" in
     setup
     CI=true pnpm --dir "$AGENTS/dispatcher" install
     start_display
+    start_secret_service fresh
     export TARGET_REPO_PATH="$TARGET"
     exec "$AGENTS/bin/pyry-start" "$@"
     ;;

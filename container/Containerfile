@@ -85,6 +85,17 @@ RUN curl -fsSL "https://cache.agilebits.com/dist/1P/op2/pkg/v${OP_VERSION}/op_li
  && install -m 0755 /tmp/op-cli/op /usr/local/bin/op \
  && rm -rf /tmp/op.zip /tmp/op-cli
 
+# Desktop fork: Electron's safeStorage on Linux encrypts with a key kept in the
+# Secret Service over D-Bus. Without one it falls back to the weak basic_text
+# backend, which the app refuses, so packaged-encryption tests could not run
+# here. The entrypoint starts a session bus and an unlocked, throwaway
+# gnome-keyring for the desktop fork only. secret-tool is its readiness probe.
+# Late in the file so adding it rebuilds only the layers below.
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      gnome-keyring libsecret-1-0 libsecret-tools \
+ && rm -rf /var/lib/apt/lists/*
+
 COPY user-files/board-cards /usr/local/bin/board-cards
 COPY user-files/claude/ /opt/pyry-container/claude/
 COPY user-files/codex/ /opt/pyry-container/codex/
