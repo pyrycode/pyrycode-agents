@@ -261,15 +261,23 @@ secret_service_owned() {
     org.freedesktop.DBus.NameHasOwner string:org.freedesktop.secrets 2>/dev/null | grep -q 'boolean true'
 }
 
+# $1 is "fresh" on the run path, the only one allowed to clear a dead bus or
+# keyring. A shell in a running container may time out under load; it must
+# never take the running dispatcher's bus or keyring away, so it only warns.
 start_secret_service() {
   [ "$FORK" = pyrycode-desktop ] || return 0
+  local fresh="${1:-}"
   export DBUS_SESSION_BUS_ADDRESS="unix:path=$SECRET_BUS"
   export XDG_CURRENT_DESKTOP="${XDG_CURRENT_DESKTOP:-GNOME}"
   mkdir -p -m 0700 "$SECRET_DIR" "$SECRET_DIR/data" "$SECRET_DIR/run"
   # A `podman restart` keeps /tmp, so a socket can outlive its bus. Test the
   # bus itself, and clear a dead one's socket before starting another.
+  if [ -S "$SECRET_BUS" ] && [ "$fresh" != fresh ] && ! session_bus_alive; then
+    log "session bus not answering; a shell leaves it alone (restart the container to reset it)"
+    return 0
+  fi
   if ! session_bus_alive; then
-    rm -f "$SECRET_BUS"
+    rm -f "$SECRET_BUS" || true
     cat > "$SECRET_DIR/session.conf" <<CONF
 <!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN"
  "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
@@ -288,9 +296,14 @@ CONF
       >"$SECRET_DIR/dbus.log" 2>&1 || log "session D-Bus did not start; see $SECRET_DIR/dbus.log"
   fi
   if ! secret_service_owned; then
+    if [ "$fresh" != fresh ] && [ -n "$(ls -A "$SECRET_DIR/data" 2>/dev/null)" ]; then
+      log "keyring not answering; a shell leaves it alone (restart the container to reset it)"
+      return 0
+    fi
     # A keyring left by an earlier start is locked with a password nobody
     # has any more. Start from an empty one.
-    rm -rf "$SECRET_DIR/data"; mkdir -p -m 0700 "$SECRET_DIR/data" || true
+    rm -rf "$SECRET_DIR/data" || true
+    mkdir -p -m 0700 "$SECRET_DIR/data" || true
     head -c 32 /dev/urandom | base64 -w0 \
       | XDG_DATA_HOME="$SECRET_DIR/data" XDG_RUNTIME_DIR="$SECRET_DIR/run" \
           timeout 20 gnome-keyring-daemon --unlock --components=secrets >/dev/null 2>"$SECRET_DIR/keyring.log" \
@@ -360,7 +373,7 @@ case "${1:-run}" in
     setup
     CI=true pnpm --dir "$AGENTS/dispatcher" install
     start_display
-    start_secret_service
+    start_secret_service fresh
     export TARGET_REPO_PATH="$TARGET"
     exec "$AGENTS/bin/pyry-start" "$@"
     ;;
