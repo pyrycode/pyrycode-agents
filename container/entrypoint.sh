@@ -246,13 +246,18 @@ SECRET_BUS=/tmp/pyry-session-bus
 SECRET_DIR=/tmp/pyry-secret-service
 
 secret_service_ready() {
-  printf ok | timeout 10 secret-tool store --label=pyry-container-probe pyry-container probe >/dev/null 2>&1 \
-    && [ "$(timeout 10 secret-tool lookup pyry-container probe 2>/dev/null)" = ok ] \
-    && timeout 10 secret-tool clear pyry-container probe >/dev/null 2>&1
+  printf ok | timeout 3 secret-tool store --label=pyry-container-probe pyry-container probe >/dev/null 2>&1 \
+    && [ "$(timeout 3 secret-tool lookup pyry-container probe 2>/dev/null)" = ok ] \
+    && timeout 3 secret-tool clear pyry-container probe >/dev/null 2>&1
+}
+
+session_bus_alive() {
+  timeout 3 dbus-send --session --print-reply --dest=org.freedesktop.DBus /org/freedesktop/DBus \
+    org.freedesktop.DBus.Peer.Ping >/dev/null 2>&1
 }
 
 secret_service_owned() {
-  timeout 10 dbus-send --session --print-reply --dest=org.freedesktop.DBus /org/freedesktop/DBus \
+  timeout 3 dbus-send --session --print-reply --dest=org.freedesktop.DBus /org/freedesktop/DBus \
     org.freedesktop.DBus.NameHasOwner string:org.freedesktop.secrets 2>/dev/null | grep -q 'boolean true'
 }
 
@@ -261,7 +266,10 @@ start_secret_service() {
   export DBUS_SESSION_BUS_ADDRESS="unix:path=$SECRET_BUS"
   export XDG_CURRENT_DESKTOP="${XDG_CURRENT_DESKTOP:-GNOME}"
   mkdir -p -m 0700 "$SECRET_DIR" "$SECRET_DIR/data" "$SECRET_DIR/run"
-  if [ ! -S "$SECRET_BUS" ]; then
+  # A `podman restart` keeps /tmp, so a socket can outlive its bus. Test the
+  # bus itself, and clear a dead one's socket before starting another.
+  if ! session_bus_alive; then
+    rm -f "$SECRET_BUS"
     cat > "$SECRET_DIR/session.conf" <<CONF
 <!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN"
  "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
@@ -280,6 +288,9 @@ CONF
       >"$SECRET_DIR/dbus.log" 2>&1 || log "session D-Bus did not start; see $SECRET_DIR/dbus.log"
   fi
   if ! secret_service_owned; then
+    # A keyring left by an earlier start is locked with a password nobody
+    # has any more. Start from an empty one.
+    rm -rf "$SECRET_DIR/data"; mkdir -p -m 0700 "$SECRET_DIR/data" || true
     head -c 32 /dev/urandom | base64 -w0 \
       | XDG_DATA_HOME="$SECRET_DIR/data" XDG_RUNTIME_DIR="$SECRET_DIR/run" \
           timeout 20 gnome-keyring-daemon --unlock --components=secrets >/dev/null 2>"$SECRET_DIR/keyring.log" \

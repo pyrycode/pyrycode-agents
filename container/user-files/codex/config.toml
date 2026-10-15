@@ -7,8 +7,10 @@ model = "gpt-6.1-sol"
 model_reasoning_effort = "high"
 
 # MCP OAuth logins, such as Figma's in the desktop container, are stored as a
-# file in the home volume: the container has no OS keyring. The fixed callback
-# port lets a re-login be forwarded from the Mac (README, Figma).
+# file in the home volume. Keep it a file: the desktop container's keyring is a
+# throwaway one for Electron tests and is emptied at every start (README,
+# Secret Service). The fixed callback port lets a re-login be forwarded from
+# the Mac (README, Figma).
 mcp_oauth_credentials_store = "file"
 mcp_oauth_callback_port = 18765
 
