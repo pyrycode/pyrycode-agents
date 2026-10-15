@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "check": [
+    "make vet",
+    "go test -race -json ./...",
+    "make staticcheck",
+    "make substrate-guard",
+    "go test -tags e2e -race -count=1 -json ./internal/e2e/..."
+  ],
+  "formats": {
+    "go test -race -json ./...": {
+      "format": "go-json",
+      "baseline": "go test -race -json -run {{TESTS}} ./..."
+    },
+    "go test -tags e2e -race -count=1 -json ./internal/e2e/...": {
+      "format": "go-json",
+      "baseline": "go test -tags e2e -race -count=1 -json -run {{TESTS}} ./internal/e2e/..."
+    }
+  }
+}

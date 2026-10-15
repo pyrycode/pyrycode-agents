@@ -221,7 +221,7 @@ trap "restore_tty; rm -f '$LOCK_FILE'" EXIT
 # loaded .env. No extra process or shell quoting layer is introduced.
 "$AUTOMATION_ACCESS" op run --env-file="$AGENTS_DIR/.env" -- \
   /usr/bin/perl -e 'delete $ENV{OP_SERVICE_ACCOUNT_TOKEN}; my $runner = shift @ARGV; my $managed = shift @ARGV; $ENV{PYRY_MANAGED} = 1 if length $managed; $ENV{PYRY_AGENT_RUNNER} = $runner if length $runner; setpgrp(0, 0) or die "setpgrp: $!\n"; open(STDIN, "<", "/dev/null"); exec @ARGV or die "exec: $!\n";' -- \
-  "$RUNNER_OVERRIDE" "$MANAGED_OVERRIDE" "$NODE_BIN" --import tsx src/dispatch-bin.ts "$@" &
+  "$RUNNER_OVERRIDE" "$MANAGED_OVERRIDE" "$NODE_BIN" --import "$AGENTS_DIR/bin/gate-defaults.mjs" --import tsx src/dispatch-bin.ts "$@" &
 LAUNCH_PID=$!
 
 # Find the dispatcher's own PID for the lock: the process whose command
