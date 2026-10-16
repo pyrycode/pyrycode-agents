@@ -34,7 +34,7 @@ if settings["GOWORK"] not in ("", "off"):
 config = Path(settings["GOENV"])
 if settings["GOENV"] != "off" and config.exists():
     settings["GOENV_DIGEST"] = hashlib.sha256(config.read_bytes()).hexdigest()
-raw = run("go", "list", "-m", "-json", "all")
+raw = run("go", "list", "-mod=readonly", "-m", "-json", "all")
 decoder = json.JSONDecoder()
 while raw.strip():
     module, end = decoder.raw_decode(raw.lstrip())
