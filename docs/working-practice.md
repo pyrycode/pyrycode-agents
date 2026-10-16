@@ -38,6 +38,20 @@ The pipeline uses one GitHub identity, and GitHub refuses an author's approval o
 
 The dispatcher owns the mechanical gates, as each role file describes. When you read a gate result, read the executed counts and the failure evidence. A one-test baseline can leave out a sibling that writes a fixture the branch's full run depends on, so compare the inputs and suite composition before blaming the change. Search existing issues before filing a new one.
 
+The Core verifier reports each ordinary check separately. Race unit tests and
+fake-daemon integration tests emit Go JSON so only named failures repeat on the
+candidate and unchanged base. Source review runs alongside those checks; the
+final verdict still waits for both. The exhaustive restoration sweep is selected
+from the restoration package's dependency closure and is always mandatory before
+release. Standard product gates share the native host's test-admission hold.
+
+On a failed attempt, completed raw-green steps may be retained for the same clean
+tree and ordered command list. `bin/verifier-inputs` binds that retention to the
+consumer and dispatcher source revisions and Go toolchain/settings. Environment
+changes, missing or modified logs, dirty files and evidence older than one day
+invalidate retention. The failed step and every unfinished step run again.
+Original failures remain archived separately from the current attempt's logs.
+
 ## Source and evidence checks
 
 When sizing, building or reviewing code, use the target's `docs/knowledge/features/development-verification.md`. It covers source-search limits, validation boundaries, protocol tests, capture evidence and artifact survival. Read the section you need. Current code wins over an old observation.

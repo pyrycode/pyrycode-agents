@@ -1,0 +1,45 @@
+#!/usr/bin/env python3
+"""Describe external verifier inputs without emitting credential values."""
+from pathlib import Path
+import hashlib
+import json
+import stat
+import subprocess
+
+root = Path(__file__).resolve().parents[1]
+
+
+def run(*args):
+    return subprocess.check_output(args).decode().strip()
+
+
+for checkout in [root, root / "dispatcher"]:
+    if Path(run("git", "-C", str(checkout), "rev-parse", "--show-toplevel")).resolve() != checkout.resolve():
+        raise SystemExit("verifier tooling checkout is uninitialized; partial gate reuse disabled")
+    if run("git", "-C", str(checkout), "status", "--porcelain", "--untracked-files=no"):
+        raise SystemExit("verifier tooling has local changes; partial gate reuse disabled")
+    print(run("git", "-C", str(checkout), "rev-parse", "HEAD^{tree}"))
+    untracked = subprocess.check_output(["git", "-C", str(checkout), "ls-files", "--others", "--exclude-standard", "-z"]).decode().split("\0")
+    identities = []
+    for name in sorted(name for name in untracked if name):
+        path = checkout / name
+        info = path.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_size > 1048576:
+            raise SystemExit("external untracked input cannot be bounded; partial gate reuse disabled")
+        identities.append([name, hashlib.sha256(path.read_bytes()).hexdigest()])
+    print(json.dumps(identities))
+settings = json.loads(run("go", "env", "-json", "GOVERSION", "GOOS", "GOARCH", "CGO_ENABLED", "GOFLAGS", "GOTOOLCHAIN", "GOWORK", "GOMODCACHE", "GOENV"))
+if settings["GOWORK"] not in ("", "off"):
+    raise SystemExit("Go workspace inputs are external; partial gate reuse disabled")
+config = Path(settings["GOENV"])
+if settings["GOENV"] != "off" and config.exists():
+    settings["GOENV_DIGEST"] = hashlib.sha256(config.read_bytes()).hexdigest()
+raw = run("go", "list", "-m", "-json", "all")
+decoder = json.JSONDecoder()
+while raw.strip():
+    module, end = decoder.raw_decode(raw.lstrip())
+    raw = raw.lstrip()[end:]
+    replacement = module.get("Replace", {})
+    if replacement and not replacement.get("Version"):
+        raise SystemExit("local module replacement inputs are external; partial gate reuse disabled")
+print(json.dumps(settings, sort_keys=True))
