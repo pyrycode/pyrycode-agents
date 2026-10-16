@@ -45,6 +45,12 @@ final verdict still waits for both. The exhaustive restoration sweep is selected
 from the restoration package's dependency closure and is always mandatory before
 release. Standard product gates share the native host's test-admission hold.
 
+Builders use that same hold for focused Go tests from the product worktree:
+`python3 scripts/test-admission.py -- go test -timeout=30m -race -run '^TestName$' ./<package>/...`.
+Keep the package and test selection focused. The hold coordinates expensive test
+commands across Core and Mobile; it does not require a full suite. Raw `go test`
+commands do not acquire it.
+
 On a failed attempt, completed raw-green steps may be retained for the same clean
 tree and ordered command list. `bin/verifier-inputs` binds that retention to the
 consumer and dispatcher source revisions and Go toolchain/settings. Environment
