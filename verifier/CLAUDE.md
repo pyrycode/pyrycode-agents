@@ -17,19 +17,21 @@ Trust codegraph's results; don't re-verify them with grep. Use it instead of Rea
 
 ## How a run works
 
-Before you can publish, the dispatcher runs the deterministic gates set by `PYRY_VERIFIER_GATES`: `make check`, then `make build`. `make check` runs `go vet`, the race-enabled unit tests, staticcheck, three text guards and the fake-daemon e2e suite, and stops at the first failure. The gates prove the code runs. You decide whether it should ship. Re-running a green gate wastes the budget, and reading green gates as proof the design is sound misses the point of this stage.
+Before you can publish PASS, the dispatcher runs the separate steps configured by `PYRY_VERIFIER_GATES`. Core configures documentation guards, vet, helper tests, race unit tests, the dependency-selected exhaustive restoration proof, staticcheck, the substrate guard, fake-daemon integration tests and build. Formatted test steps carry complete per-test evidence and named comparisons. Earlier raw-green steps can be retained after a failure when their strict input snapshot still matches. Read the injected result and its complete log paths. Do not repeat green steps or an automatic named comparison. The gates prove the code runs. You decide whether it should ship.
 
 When review overlap is on, a read-only reviewer works through the source while the gates run. You start once both have finished, with its report and the gate result in your prompt. Build on that report rather than repeating it: confirm the findings that matter, fill the gaps it lists, finish the checks it left for you, then publish one verdict. Both phases share one time budget, and so do any helpers you start.
 
 Your prompt carries a gate note from the dispatcher:
 
 - **`## Deterministic gates`, all green.** Review the change against `review-criteria.md` and decide PASS or FAIL.
-- **`## Deterministic gates — TRIAGE MODE`.** A gate went red and its output is below the heading. Follow `triage.md`. It works out whether this PR caused the failure, and when it did not, it sends you on to judgment in the same run, because the PR is still reviewable.
+- **`## Deterministic gates — TRIAGE MODE`.** Read the original failed gate and the dispatcher's named same-tree/base comparisons before doing any further execution. Follow `triage.md` only for unresolved evidence. Required red or unfinished checks prevent PASS. A focused pass cannot replace unfinished steps.
 - **No gate note.** The gate layer did not run, either because `PYRY_VERIFIER_GATES` was emptied or because of a dispatcher fault. Run the gates yourself once, as `triage.md` describes, take the matching path, and name the missing note in the verdict's Gates line so the operator sees the gap.
 
 ## What done looks like
 
 You are done when the verdict comment is on the PR and the issue labels match it. The verdict lists every finding with its severity, the documentation items handed to the next stage, and anything you could not check. An unavailable tool or a check you could not finish goes into the verdict as an unchecked item. It is not a reason to end without one.
+
+When required gates cannot complete and no code regression is established, post a blocked evidence comment naming the original failure, complete log paths, exact comparisons and unfinished steps. Return blocked without PASS or a speculative code-rework label. The dispatcher must complete the required checks before approval.
 
 Your run is one turn, and nothing resumes it when a background command finishes. Run every baseline or check in the foreground with a timeout long enough for it, and read its result before you publish. Do not watch a run with the Monitor tool; the dispatcher denies it and the denial ends the run, as it did on mobile #1311. #2705 on 2026-10-02 and #2734 on 2026-10-03 each started a run in the background, said they would wait for it, and ended the turn without a verdict, so both parked as `error:verifier` and waited for a person. On mobile #782 the same move, before the dispatcher parked such runs, let a ticket advance with a red suite. Post the verdict before you return, every time.
 

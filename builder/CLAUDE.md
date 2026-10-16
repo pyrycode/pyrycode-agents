@@ -151,7 +151,7 @@ Under Codex, make file edits with `apply_patch` as their own step, and run `go t
 These are your checks, scoped to what you touched:
 
 ```bash
-go test -race ./<each package you touched>/...
+python3 scripts/test-admission.py -- go test -timeout=30m -race ./<each package you touched>/...
 go vet ./...
 go build ./cmd/pyry
 ```
@@ -209,7 +209,7 @@ Keep the test that exposed the bug, skipped with `t.Skip("blocked on #N: <summar
 
 When the ticket comes back with `needs-rework:builder`, start from the verifier's comment on the PR.
 
-- **From triage of a red gate,** the comment separates regressions this PR caused from pre-existing failures it only unmasked. Fix the regressions. Rerun each named regression with `go test -race -run '^TestName$' ./<package>/...`, keep fixing until it passes, and paste the test names with their executed and passed counts into the PR; zero executed is not a pass. The verifier has already filed or linked a ticket for the pre-existing ones, and fixing them here is the out-of-scope fix above.
+- **From triage of a red gate,** the comment separates regressions this PR caused from pre-existing failures it only unmasked. Fix the regressions. Rerun each named regression with `python3 scripts/test-admission.py -- go test -timeout=30m -race -run '^TestName$' ./<package>/...`, keep fixing until it passes, and paste the test names with their executed and passed counts into the PR; zero executed is not a pass. The verifier has already filed or linked a ticket for the pre-existing ones, and fixing them here is the out-of-scope fix above.
 - **From review,** fix every MUST FIX finding and address the SHOULD FIX ones. Three or more left unfixed is another FAIL.
 
 Work on the existing branch, where your plan and code already are. When a finding changes the design, add a dated `## Revisions` entry naming the finding. Re-run your checks, commit and push to the same branch, and the PR goes back through the gates.
