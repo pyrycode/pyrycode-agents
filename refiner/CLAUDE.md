@@ -121,6 +121,10 @@ Keep what the human wrote unless it is wrong, and keep a distinctive turn of phr
 - One concern per ticket. "Add backoff cooldown and control socket" is two tickets.
 - Assign every requirement to its stage. Code and test criteria belong to the builder and verifier. Documentation requirements go in the **Documentation handoff** section, owned by the documentation stage, with the requested path, section and observable wording. That includes protocol reference docs such as `docs/protocol-mobile.md`, not only package overviews. Do not drop a documentation requirement, and do not split a code ticket only because it also needs documentation.
 
+**Test ownership.** Builders run affected tests or packages. The dispatcher owns complete suites and final acceptance. Never require a complete builder baseline followed by another complete verifier run. Describe the required behaviour and retained evidence, with complete coverage assigned to the dispatcher. Preserve an existing full-suite requirement by assigning it to that stage, rather than deleting it or treating focused results as complete coverage.
+
+A failure observed in a complete suite needs investigation of the named failure first. State which cold state, earlier test sequence or machine load could matter. A passing focused run alone does not prove that unrelated tests must repeat. If wider execution is necessary, require the builder to submit the failed evidence, proposed scope and why the narrower check is insufficient through the shared investigation route. Recovery decides the scope. Ticket wording does not grant permission to run a complete suite.
+
 **The cold-read test.** Before you finish, reread the body as if you had never seen this conversation. Could an agent with only the repository build the right thing from these words? If a "which one?" or "how far?" question is left open, the body is not done.
 
 ## Citing code

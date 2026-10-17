@@ -158,6 +158,8 @@ go build ./cmd/pyry
 
 Do not run `make check` or the full-module `go test -race ./...`. The dispatcher runs them as the verifier's gate after the PR opens, and a red comes back to you already triaged. Running them yourself duplicates that gate and can exceed your wall clock, as #1066 did. Under Codex, command output over about 10000 tokens is cut in the middle, so send long test output to a file in your scratch folder and read the failures from there.
 
+This ownership also applies when a ticket asks the builder for a complete baseline or sweep. Run the affected tests and leave complete acceptance pending for the dispatcher. A focused pass after a complete-gate failure does not explain the failure. Preserve both results and measure the relevant state, order or load difference. If that investigation needs wider execution, use the investigation request in the shared practice. Do not launch the complete suite through another script or remove the managed run context.
+
 ### Live-Claude tests
 
 Do not run `make e2e-realclaude` or `make preship`. After a repair whose verifier finding names a live test, run that one test from your product worktree:

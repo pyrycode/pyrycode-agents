@@ -49,7 +49,20 @@ Builders use that same hold for focused Go tests from the product worktree:
 `python3 scripts/test-admission.py -- go test -timeout=30m -race -run '^TestName$' ./<package>/...`.
 Keep the package and test selection focused. The hold coordinates expensive test
 commands across Core and Mobile; it does not require a full suite. Raw `go test`
-commands do not acquire it.
+commands in newly admitted Core builders also use the dispatcher's typed Go
+launcher and acquire that hold. This covers the managed command path. Operator
+calls, legacy workers and explicit absolute or unmanaged Go paths are outside
+that guarantee. Builders use the supported managed path.
+
+### Builder test scope and wider investigations
+
+Managed builders run affected tests or packages. Complete suites, full baselines and release sweeps belong to the dispatcher. A ticket cannot override this boundary. The managed launchers check scope before taking the shared test hold. Use the supported launcher and keep its managed context intact. Builds, compilation, formatting and static checks keep their normal ownership.
+
+Start a failure investigation with the named test and the relevant cold state, preceding test sequence or machine load. Preserve every failed result. A focused pass after a complete-gate failure does not establish that all unrelated tests must repeat.
+
+If a narrower run cannot answer the question, submit an investigation through `python3 "$AGENTS_REPO_PATH/dispatcher/scripts/fleet-task.py" investigate --request-file FILE`. Include the exact revision, failed test names, retained evidence, requested scope and why a narrower check is insufficient. The request queues a recovery assessment. It starts no tests and grants no permission to run a full suite. Recovery selects any wider diagnostic. Record the request as pending evidence in the handoff. A request, a zero-test result or an unexecuted full-suite criterion is never a pass. Complete verifier and release coverage remains required.
+
+The request schema, evidence lookup and rollout boundary are in [builder test scope](../dispatcher/docs/builder-test-scope.md).
 
 On a failed attempt, completed raw-green steps may be retained for the same clean
 tree and ordered command list. `bin/verifier-inputs` binds that retention to the
