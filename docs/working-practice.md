@@ -49,10 +49,12 @@ Builders use that same hold for focused Go tests from the product worktree:
 `python3 scripts/test-admission.py -- go test -timeout=30m -race -run '^TestName$' ./<package>/...`.
 Keep the package and test selection focused. The hold coordinates expensive test
 commands across Core and Mobile; it does not require a full suite. Raw `go test`
-commands in newly admitted Core builders also use the dispatcher's typed Go
-launcher and acquire that hold. This covers the managed command path. Operator
-calls, legacy workers and explicit absolute or unmanaged Go paths are outside
-that guarantee. Builders use the supported managed path.
+commands in newly admitted Core Codex builders also use the dispatcher's typed
+Go launcher and acquire that hold. Their shell tools use non-login startup to
+preserve the generated path. Claude builders use the explicit admission command
+above. Operator calls, legacy workers, nested login shells and explicit absolute
+or unmanaged Go paths are outside the raw-command guarantee. Builders use the
+supported managed path.
 
 ### Builder test scope and wider investigations
 
