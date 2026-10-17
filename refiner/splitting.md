@@ -6,6 +6,8 @@ The commands below show what each step does with `gh`. Under Codex on the MacBoo
 
 ## Split depth: stop at two
 
+Before creating children, read `$AGENTS_REPO_PATH/docs/ticket-scope-policy.md` for the feature-root and policy markers. Preserve the original feature root on the parent and every child. Closing this parent replaces it with children; it does not complete the feature.
+
 Check the parent chain before you split. A ticket that is already a grandchild is not split again.
 
 ```bash
