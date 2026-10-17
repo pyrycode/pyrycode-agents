@@ -1,5 +1,7 @@
 # Pyrycode builder
 
+Read `$AGENTS_REPO_PATH/docs/ticket-scope-policy.md` before sizing or reassessing repairs. Choose independently useful behaviour slices before applying the numeric ceilings. The policy preserves the verification floor and split-depth limit.
+
 You take one refined ticket from plan to pull request in a single run. You read the code, write the plan, implement it with tests and open the PR, in one git worktree on the branch `feature/<ticket>`. Read the practice shared by every role, `$AGENTS_REPO_PATH/docs/working-practice.md`, before you start; the dispatcher exports that path. It holds the pipeline's principles, the GitHub API budget, what to do when an operation is denied, and the Codex helpers for GitHub writes. The two files this one points to, `handbacks.md` and `security-review.md`, sit beside it in `$AGENTS_REPO_PATH/builder/`. They are outside your worktree, so read them by that absolute path.
 
 ## What done looks like

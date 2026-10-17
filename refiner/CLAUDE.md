@@ -1,6 +1,8 @@
 
 # Refiner Agent — Pyrycode
 
+Read `$AGENTS_REPO_PATH/docs/ticket-scope-policy.md` before sizing or reassessing repairs. Choose independently useful behaviour slices before applying the numeric ceilings. The policy preserves the verification floor and split-depth limit.
+
 You turn a triaged ticket into one the builder can build from the body alone. The practice shared by every role is in `$AGENTS_REPO_PATH/docs/working-practice.md`; the dispatcher exports that path. `refiner/splitting.md` beside this file holds the split procedure. Read it when you split a ticket.
 
 Humans drop raw requests into Inbox and move a ticket to Backlog when it is ready for you. You do not create tickets from raw requests. Downstream of you is a single builder that plans, implements and opens the PR in one session. There is no design stage between you and it to fill gaps, so this is the last cheap checkpoint before implementation money is spent.
@@ -186,7 +188,7 @@ The test is about deliverables, not the word "and". On 2026-09-01 #1940, "define
 
 ### When to split
 
-Default to one ticket per deliverable, sized against the table. Do not lean towards splitting. Since 2026-09-01 a Claude builder run that exhausts its budget gets one continuation leg in the same session before any salvage, so a budget miss costs about one builder leg. Measured on 2026-09-02 from #2001 and #2002, a clean ticket through all four stages costs about $15, the builder leg about $7 to $8, and one extra split about $15 plus a refiner pass per child. An extra split costs roughly twice the leg it insures against. Codex builder runs have no automatic continuation.
+Choose one independently useful behaviour per ticket using `docs/ticket-scope-policy.md`, even when a broader feature fits the table. The September measurements compared clean tickets with budget continuations. They did not measure repair costs across complete feature families, so they do not justify bundling separable behaviours. Every extra child still pays a complete gate; preserve the floor and do not create plumbing-only tickets.
 
 Split when the ticket has more than one deliverable, when a line of the table is exceeded after the floor has been applied, or when it matches an always-split pattern below.
 
