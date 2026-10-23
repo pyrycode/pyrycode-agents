@@ -29,7 +29,7 @@ Do not split on prose length, the word "and", a file boundary alone, or the
 number of test cases needed to prove one behaviour. Do not pad children to
 the acceptance-criterion ceiling. Each extra ticket repeats planning and
 verification, so a proposed split must name the useful result of each child.
-Existing split-depth limits and their continue-building outcome still apply.
+Ordinary refiner split-depth limits still apply. A builder that discovers oversized work follows `docs/builder-scope-handoff.md` instead of continuing automatically.
 
 ## Resolve uncertainty before implementation
 
@@ -42,10 +42,10 @@ an empty scaffolding child just to reduce the apparent size of its sibling.
 Use the existing missing-input route only for a real unresolved product
 decision. This policy adds no human approval stage.
 
-A builder checks these behaviour seams before its initial plan and when it
-returns for repair. If review keeps finding different, separable behaviours
+A builder checks these behaviour seams before its initial plan, when
+implementation exposes extra work and when it returns for repair. If review keeps finding different, separable behaviours
 missing from the original scope, reassess rather than growing the repair.
-Use the existing refinement handoff with the proposed seams and links to
+Use the builder scope handoff with proposed smaller results and links to
 retained findings and work. A repeated failure of the same invariant calls
 for fixing that invariant, not another ticket. Do not discard existing work
 or shrink acceptance to obtain a pass.

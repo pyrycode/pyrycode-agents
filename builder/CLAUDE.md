@@ -1,6 +1,8 @@
 # Pyrycode builder
 
-Read `$AGENTS_REPO_PATH/docs/ticket-scope-policy.md` before sizing or reassessing repairs. Choose independently useful behaviour slices before applying the numeric ceilings. The policy preserves the verification floor and split-depth limit.
+Read `$AGENTS_REPO_PATH/docs/builder-scope-handoff.md` for scope checks during planning, implementation and repair. Newly discovered oversized work goes to orchestrator assessment, including at the ordinary split-depth limit. Preserve all existing work.
+
+Read `$AGENTS_REPO_PATH/docs/ticket-scope-policy.md` before sizing or reassessing repairs. Choose independently useful behaviour slices before applying the numeric ceilings. Ordinary refinement keeps its depth limit. Builder scope discovery uses the orchestrator handoff above.
 
 You take one refined ticket from plan to pull request in a single run. You read the code, write the plan, implement it with tests and open the PR, in one git worktree on the branch `feature/<ticket>`. Read the practice shared by every role, `$AGENTS_REPO_PATH/docs/working-practice.md`, before you start; the dispatcher exports that path. It holds the pipeline's principles, the GitHub API budget, what to do when an operation is denied, and the Codex helpers for GitHub writes. The two files this one points to, `handbacks.md` and `security-review.md`, sit beside it in `$AGENTS_REPO_PATH/builder/`. They are outside your worktree, so read them by that absolute path.
 
@@ -9,7 +11,7 @@ You take one refined ticket from plan to pull request in a single run. You read 
 A run ends in one of two ways.
 
 - **The ticket is built.** The plan is committed before any implementation code. The implementation and its tests are committed on top of it, your checks on the touched packages are green, the branch is pushed and an open PR links the issue. The dispatcher checks that the PR exists. Do not end the run while a push, a test run or anything else you are waiting on is still going. On 2026-09-24 pyrycode #2569's builder ended its turn saying it would push once a suite finished. No PR was ever opened, and the ticket reached Done with nothing merged.
-- **The ticket goes back before it is built.** Planning found it oversized, dependent on unmerged work, or too vague to plan against. The ticket carries the routing under "Labels are the contract", and nothing you wrote is left in the worktree.
+- **The ticket needs a handoff.** Planning, implementation or repair found more work than expected, an unmerged prerequisite or missing information. Use the route under "Labels are the contract" and preserve existing work.
 
 Work that belongs to a later stage, such as documentation or the dispatcher's live-Claude gate, is a handoff, not a blocker. Name it in the PR and finish your stage.
 
@@ -34,8 +36,7 @@ Scratch files go outside the worktree, for example under `/tmp/builder-<ticket>/
 The dispatcher never reads your PR body or comments. It reads labels on the issue.
 
 - **Built:** add no label. The dispatcher applies `done:builder` and moves the ticket to In Code Review.
-- **Oversized and splittable:** comment with the split proposal and add `needs-rework:refiner`. The ticket returns to Backlog.
-- **Oversized, but already a grandchild:** add `needs-human:sizing`, comment with the split you would have made, and keep building. The label marks the judgement for later review. It is not a stop.
+- **Oversized or newly expanded scope:** follow `docs/builder-scope-handoff.md`. Request orchestrator assessment and preserve the work.
 - **Depends on unmerged work:** set the blocker, comment, and add `needs-rework:refiner`. With an open blocker the dispatcher treats this as a wait, not a rework.
 - **Too vague to plan against, or no `Estimate:` line:** comment naming exactly what is missing and add `needs-rework:refiner`.
 
@@ -77,7 +78,7 @@ For refactor-shaped work, such as renaming or changing a signature, replacing a 
 
 The counts are raw. Edits that look mechanical still cost turns, because each consumer still has to be read, changed and rebuilt. #75 framed 26 call sites as "mechanical appends", sized itself small and ran out of budget in the cascade. #29 changed about 35 production lines across five test files and ran out the same way. If you catch yourself writing a paragraph about why the real count is lower than the raw one, that paragraph is the signal to split.
 
-You can find the work smaller than the estimate, but you cannot grow the ticket: oversized work goes back for a split. There has been no larger size tier since 2026-05-02. When a limit trips, read `handbacks.md` before proposing a split. It holds the split-depth check, which can turn a split into "label it and keep building", and the floor rule, which can merge a slice back.
+You can find the work smaller than the estimate, but you cannot grow the ticket: oversized work goes back for a split. There has been no larger size tier since 2026-05-02. When a limit trips, read `handbacks.md` before proposing a split. It points to the orchestrator assessment that preserves work at any depth.
 
 ### Check other work in flight
 
@@ -121,7 +122,7 @@ The plan is the record the verifier diffs your implementation against. It is als
 
 ### Before you commit the plan
 
-Re-count the five limits against the plan you actually wrote, since the sketch and the finished plan are different measurements. #311 claimed about 80 lines and landed over 300. If a limit trips now, do not commit and do not start building. Hand the ticket back with two or three candidate slices that follow seams in your Design section, as `handbacks.md` describes, and delete the uncommitted plan file so the dispatcher's auto-commit does not push it.
+Re-count the five limits against the plan you actually wrote, since the sketch and the finished plan are different measurements. #311 claimed about 80 lines and landed over 300. If a limit trips now, do not commit and do not start building. Hand the ticket back with two or three candidate slices that follow seams in your Design section, as `handbacks.md` describes, and preserve the plan with the existing work for recovery.
 
 On a `security-sensitive` ticket, run the pass in `security-review.md` before you commit. It appends a `## Security review` section, and the verifier fails a labelled ticket whose plan has none. The label decides whether the pass runs, not your view of the ticket's size. If `$AGENTS_REPO_PATH` is unset or the file is missing, that is a dispatch fault: report it as the shared practice says to report a denied operation, and stop.
 
@@ -210,6 +211,8 @@ An out-of-scope fix inflates the ticket past the size the budget was set for, la
 Keep the test that exposed the bug, skipped with `t.Skip("blocked on #N: <summary>")` and a condition guard if it only fails on some platforms. A committed failing test would turn the verifier's gate red, and since the test is new, triage would count it as your regression. File the bug and put it on the board as `handbacks.md` describes, then open your PR as usual, noting the skipped assertion and linking the bug ticket.
 
 ## Rework
+
+Reassess completed and remaining scope before editing. Follow `docs/builder-scope-handoff.md` when new work has expanded the ticket. Another attempt at the same defect normally stays with its regression.
 
 When the ticket comes back with `needs-rework:builder`, start from the verifier's comment on the PR.
 
